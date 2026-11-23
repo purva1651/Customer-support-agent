@@ -4,7 +4,7 @@ lint:
 	ruff check .
 
 test:
-	pytest
+	pytest --basetemp=.pytest_tmp
 
 crm:
 	uvicorn mock_crm.main:app --host 0.0.0.0 --port 9000 --reload
