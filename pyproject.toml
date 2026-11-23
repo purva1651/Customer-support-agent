@@ -41,6 +41,7 @@ include = ["app*", "mock_crm*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-ra"
 markers = ["eval: requires a live LLM and is excluded from normal CI"]
 
