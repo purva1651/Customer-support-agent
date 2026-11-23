@@ -10,6 +10,13 @@ agent:
   tool_retries: 2
   memory_path: data/checkpoints.sqlite
   approval_ttl_seconds: 600
+guardrails:
+  max_message_chars: 2000
+  injection_patterns:
+    - '(?i)\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions?\b'
+    - '(?i)\b(?:reveal|show|print|repeat)\s+(?:the\s+)?(?:system|developer)\s+(?:prompt|instructions?)\b'
+    - '(?i)\b(?:bypass|disable|override)\s+(?:your\s+)?(?:rules|safety|guardrails)\b'
+    - '(?i)\bignore\s+your\s+rules\s+and\s+refund\s+everything\b'
 retrieval:
   knowledge_dir: knowledge_base
   persist_dir: data/chroma

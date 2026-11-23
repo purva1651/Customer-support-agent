@@ -1,11 +1,13 @@
 import os
+import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeVar
 
 import yaml
 from dotenv import dotenv_values
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StrictConfig(BaseModel):
@@ -26,6 +28,21 @@ class AgentConfig(StrictConfig):
     tool_retries: int = Field(default=2, ge=0, le=10)
     memory_path: Path = Path("data/checkpoints.sqlite")
     approval_ttl_seconds: int = Field(default=600, gt=0)
+
+
+class GuardrailsConfig(StrictConfig):
+    max_message_chars: int = Field(default=2000, ge=1, le=2000)
+    injection_patterns: list[str] = Field(default_factory=list)
+
+    @field_validator("injection_patterns")
+    @classmethod
+    def patterns_must_compile(cls, patterns: list[str]) -> list[str]:
+        for pattern in patterns:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"invalid prompt-injection pattern: {pattern}") from exc
+        return patterns
 
 
 class RetrievalConfig(StrictConfig):
@@ -67,6 +84,37 @@ class SecretsConfig(StrictConfig):
     langfuse_host: str = "https://cloud.langfuse.com"
 
 
+class PromptTemplates(StrictConfig):
+    router_system: str
+    answer_system: str
+    action_system: str
+    small_talk_system: str
+    escalation_system: str
+
+
+class IntentDescriptions(StrictConfig):
+    intents: dict[Literal["question", "action", "complaint", "small_talk"], str]
+
+
+class ToolSetting(StrictConfig):
+    enabled: bool = True
+    requires_approval: bool = False
+    timeout_seconds: float = Field(default=10, gt=0)
+    retries: int = Field(default=2, ge=0, le=10)
+
+
+class ToolSettings(StrictConfig):
+    tools: dict[str, ToolSetting]
+
+
+@dataclass(frozen=True)
+class RuntimeFiles:
+    config: "AppConfig"
+    prompts: PromptTemplates
+    intents: IntentDescriptions
+    tool_settings: ToolSettings
+
+
 class AppConfig(StrictConfig):
     llm: LLMConfig
     agent: AgentConfig
@@ -74,7 +122,8 @@ class AppConfig(StrictConfig):
     api: APIConfig
     crm: CRMConfig
     observability: ObservabilityConfig
-    secrets: SecretsConfig = SecretsConfig()
+    guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)
+    secrets: SecretsConfig = Field(default_factory=SecretsConfig)
 
 
 def _read_yaml(path: Path) -> dict[str, object]:
@@ -127,3 +176,19 @@ def load_config(
     merged_environment.update(dict(environ if environ is not None else os.environ))
     _overlay_environment(data, merged_environment)
     return AppConfig.model_validate(data)
+
+
+RuntimeModel = TypeVar("RuntimeModel", PromptTemplates, IntentDescriptions, ToolSettings)
+
+
+def _load_runtime_model(path: Path, model: type[RuntimeModel]) -> RuntimeModel:
+    return model.model_validate(_read_yaml(path))
+
+
+def load_runtime_files(config_directory: Path = Path("config")) -> RuntimeFiles:
+    return RuntimeFiles(
+        config=load_config(config_directory / "agent.yaml"),
+        prompts=_load_runtime_model(config_directory / "prompts.yaml", PromptTemplates),
+        intents=_load_runtime_model(config_directory / "intents.yaml", IntentDescriptions),
+        tool_settings=_load_runtime_model(config_directory / "tools.yaml", ToolSettings),
+    )
