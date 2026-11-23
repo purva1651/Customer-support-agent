@@ -70,6 +70,15 @@ class APIConfig(StrictConfig):
     port: int = Field(default=8000, ge=1, le=65535)
 
 
+class MCPConfig(StrictConfig):
+    host: str = "0.0.0.0"
+    port: int = Field(default=8001, ge=1, le=65535)
+    path: str = "/mcp"
+    api_key_header: str = "X-API-Key"
+    customer_id_header: str = "X-Customer-ID"
+    session_id_header: str = "X-Session-ID"
+
+
 class CRMConfig(StrictConfig):
     url: str = "http://localhost:9000"
 
@@ -127,6 +136,7 @@ class AppConfig(StrictConfig):
     agent: AgentConfig
     retrieval: RetrievalConfig
     api: APIConfig
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
     crm: CRMConfig
     observability: ObservabilityConfig
     guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)

@@ -36,6 +36,13 @@ retrieval:
 api:
   host: 0.0.0.0
   port: 8000
+mcp:
+  host: 0.0.0.0
+  port: 8001
+  path: /mcp
+  api_key_header: X-API-Key
+  customer_id_header: X-Customer-ID
+  session_id_header: X-Session-ID
 crm:
   url: http://localhost:9000
 observability:

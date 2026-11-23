@@ -1,4 +1,4 @@
-.PHONY: lint test crm api chat admin
+.PHONY: lint test crm api chat admin mcp
 
 lint:
 	ruff check .
@@ -17,3 +17,6 @@ chat:
 
 admin:
 	streamlit run frontend/admin_app.py
+
+mcp:
+	python -m app.mcp_server.server
