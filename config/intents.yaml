@@ -1,0 +1,5 @@
+intents:
+  question: Ask about ticketing policies, booking details, payments, or procedures.
+  action: Request an allowed operation on the customer's booking or account.
+  complaint: Express dissatisfaction, report a problem, or request human help.
+  small_talk: Greeting, thanks, or conversation unrelated to support actions.

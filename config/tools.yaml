@@ -1,0 +1,21 @@
+tools:
+  get_booking_status:
+    enabled: true
+    requires_approval: false
+    timeout_seconds: 10
+    retries: 2
+  create_ticket:
+    enabled: true
+    requires_approval: false
+    timeout_seconds: 10
+    retries: 2
+  update_contact:
+    enabled: true
+    requires_approval: false
+    timeout_seconds: 10
+    retries: 2
+  cancel_booking:
+    enabled: true
+    requires_approval: true
+    timeout_seconds: 10
+    retries: 2

@@ -1,0 +1,30 @@
+llm:
+  provider: xai
+  model: ""
+  temperature: 0
+  timeout_seconds: 30
+  max_retries: 2
+agent:
+  max_steps: 8
+  request_timeout_seconds: 45
+  tool_retries: 2
+  memory_path: data/checkpoints.sqlite
+  approval_ttl_seconds: 600
+retrieval:
+  knowledge_dir: knowledge_base
+  persist_dir: data/chroma
+  embedding_model: BAAI/bge-m3
+  reranker_model: BAAI/bge-reranker-v2-m3
+  chunk_size: 400
+  chunk_overlap: 60
+  candidate_count: 8
+  result_count: 3
+  rrf_k: 60
+  min_score: 0.25
+api:
+  host: 0.0.0.0
+  port: 8000
+crm:
+  url: http://localhost:9000
+observability:
+  langfuse_enabled: true
