@@ -38,12 +38,12 @@ def test_approval_and_chat_response_are_typed() -> None:
     assert response.pending_action is None
 
 
-def test_chat_response_rejects_invalid_source_url() -> None:
+def test_chat_response_rejects_blank_source_url() -> None:
     with pytest.raises(ValidationError):
         ChatResponse.model_validate(
             {
                 "reply": "See source.",
                 "intent": "question",
-                "sources": [{"title": "Policy", "url": "not-a-url"}],
+                "sources": [{"title": "Policy", "url": ""}],
             }
         )

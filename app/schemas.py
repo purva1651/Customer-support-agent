@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Intent = Literal["question", "action", "complaint", "small_talk"]
 Language = Literal["English", "Hindi", "Gujarati"]
@@ -27,7 +27,7 @@ class ChatRequest(APIModel):
 
 class SourceResponse(APIModel):
     title: str = Field(min_length=1)
-    url: AnyHttpUrl
+    url: str = Field(min_length=1)
 
 
 class ToolCallResponse(APIModel):

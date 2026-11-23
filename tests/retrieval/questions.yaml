@@ -1,0 +1,60 @@
+- input: What percentage cancellation fee does the mock booking system charge?
+  expected_source: cancellation_policy.md
+- input: How much is deducted if I cancel my confirmed booking?
+  expected_source: cancellation_policy.md
+- input: Can the agent cancel a booking without customer approval?
+  expected_source: cancellation_policy.md
+- input: What happens if I try to cancel a booking that is already cancelled?
+  expected_source: cancellation_policy.md
+- input: Is there a deadline or eligibility window for cancellation?
+  expected_source: cancellation_policy.md
+- input: How long does a refund take to reach my bank account?
+  expected_source: refund_policy.md
+- input: Which payment method will be used for my refund?
+  expected_source: refund_policy.md
+- input: Am I eligible for a refund exception?
+  expected_source: refund_policy.md
+- input: Can you check the status of my refund?
+  expected_source: refund_policy.md
+- input: My card payment was declined, what should I do?
+  expected_source: payment_failure.md
+- input: The UPI transaction is pending, will it be captured?
+  expected_source: payment_failure.md
+- input: I see duplicate charges on my account.
+  expected_source: payment_failure.md
+- input: How long does payment settlement take?
+  expected_source: payment_failure.md
+- input: Can I retry a failed payment or reverse a charge?
+  expected_source: payment_failure.md
+- input: How do I change the travel date on my ticket?
+  expected_source: rescheduling_policy.md
+- input: Is there a fee to change my departure time?
+  expected_source: rescheduling_policy.md
+- input: Can you move my seat or change my bus route?
+  expected_source: rescheduling_policy.md
+- input: Is a new event date guaranteed when rescheduling?
+  expected_source: rescheduling_policy.md
+- input: Which identity document do I need to carry for boarding?
+  expected_source: id_requirements.md
+- input: Does the passenger name need to match an ID card?
+  expected_source: id_requirements.md
+- input: Are there age checks or accepted identity documents at entry?
+  expected_source: id_requirements.md
+- input: Is GST included in the displayed ticket price?
+  expected_source: gst_and_fees.md
+- input: Can I get a tax invoice or GST receipt?
+  expected_source: gst_and_fees.md
+- input: Are convenience or payment fees added to the booking?
+  expected_source: gst_and_fees.md
+- input: Where can I download my e-ticket or QR code?
+  expected_source: e_ticket_policy.md
+- input: Do I need to print the barcode before venue entry?
+  expected_source: e_ticket_policy.md
+- input: My email or SMS ticket is missing.
+  expected_source: e_ticket_policy.md
+- input: Which route and departure time are on my booking?
+  expected_source: booking_support.md
+- input: Can I check my seat and booking status using the identifier?
+  expected_source: booking_support.md
+- input: Why is a booking owned by another customer shown as not found?
+  expected_source: booking_support.md
