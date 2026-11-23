@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 Intent = Literal["question", "action", "complaint", "small_talk"]
 Language = Literal["English", "Hindi", "Gujarati"]
@@ -61,3 +61,69 @@ class ApprovalResponse(APIModel):
 
 class HealthResponse(APIModel):
     status: Literal["ok"] = "ok"
+
+
+class KnowledgeSourceResponse(APIModel):
+    title: str
+    url: str
+    kind: Literal["file", "url"]
+    indexed_chunks: int = Field(ge=0)
+    status: Literal["indexed", "empty"]
+
+
+class KnowledgeListResponse(APIModel):
+    sources: list[KnowledgeSourceResponse]
+
+
+class KnowledgeUrlRequest(APIModel):
+    url: HttpUrl
+
+
+class KnowledgeMutationResponse(APIModel):
+    title: str
+    url: str
+    indexed_chunks: int = Field(ge=0)
+
+
+class KnowledgeDeleteResponse(APIModel):
+    deleted: bool
+    title: str
+
+
+class ReindexResponse(APIModel):
+    updated: int = Field(ge=0)
+    removed: int = Field(ge=0)
+    indexed_sources: int = Field(ge=0)
+    indexed_chunks: int = Field(ge=0)
+
+
+class TopQuestion(APIModel):
+    question: str
+    count: int = Field(ge=1)
+
+
+class UnresolvedQuery(APIModel):
+    question: str
+    intent: Intent
+    session_id: str
+    created_at: str
+
+
+class AnalyticsResponse(APIModel):
+    chats: int = Field(ge=0)
+    resolved: int = Field(ge=0)
+    escalated: int = Field(ge=0)
+    top_questions: list[TopQuestion]
+    unresolved: list[UnresolvedQuery]
+
+
+class EscalationRecord(APIModel):
+    session_id: str
+    customer_id: str
+    summary: str
+    ticket_id: str | None = None
+    created_at: str
+
+
+class EscalationsResponse(APIModel):
+    escalations: list[EscalationRecord]

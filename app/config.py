@@ -45,6 +45,13 @@ class GuardrailsConfig(StrictConfig):
         return patterns
 
 
+class AdminConfig(StrictConfig):
+    max_upload_bytes: int = Field(default=10_485_760, gt=0)
+    analytics_unresolved_limit: int = Field(default=50, gt=0)
+    analytics_top_questions_limit: int = Field(default=10, gt=0)
+    escalation_list_limit: int = Field(default=100, gt=0)
+
+
 class RetrievalConfig(StrictConfig):
     knowledge_dir: Path = Path("knowledge_base")
     persist_dir: Path = Path("data/chroma")
@@ -123,6 +130,7 @@ class AppConfig(StrictConfig):
     crm: CRMConfig
     observability: ObservabilityConfig
     guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)
+    admin: AdminConfig = Field(default_factory=AdminConfig)
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
 
 

@@ -1,9 +1,14 @@
+import re
+from collections.abc import Callable
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 from langchain_core.documents import Document
+
+_SOURCE_URL_MARKER = re.compile(r"\A<!--\s*source_url:\s*(https?://[^\s]+)\s*-->\s*\n?")
 
 
 class _ArticleParser(HTMLParser):
@@ -46,20 +51,48 @@ def _html_document(source: str, content: str) -> Document:
     )
 
 
-def load_document(source: str | Path, timeout_seconds: float = 15) -> list[Document]:
+def load_document(
+    source: str | Path,
+    timeout_seconds: float = 15,
+    url_validator: Callable[[str], None] | None = None,
+) -> list[Document]:
     """Load one local supported file or an HTTP(S) page as LangChain documents."""
     source_value = str(source)
     if source_value.startswith(("http://", "https://")):
-        response = httpx.get(source_value, timeout=timeout_seconds, follow_redirects=True)
-        response.raise_for_status()
-        return [_html_document(source_value, response.text)]
+        current_url = source_value
+        for _ in range(6):
+            if url_validator is not None:
+                url_validator(current_url)
+            response = httpx.get(
+                current_url,
+                timeout=timeout_seconds,
+                follow_redirects=False,
+            )
+            if response.is_redirect:
+                location = response.headers.get("location")
+                if not location:
+                    response.raise_for_status()
+                current_url = urljoin(current_url, location)
+                continue
+            response.raise_for_status()
+            return [_html_document(current_url, response.text)]
+        raise ValueError("knowledge URL exceeded the redirect limit")
 
     path = Path(source_value).expanduser().resolve()
     extension = path.suffix.lower()
     if extension in {".md", ".txt"}:
         text = path.read_text(encoding="utf-8")
+        source_url: str | None = None
+        if extension == ".md":
+            marker = _SOURCE_URL_MARKER.match(text)
+            if marker is not None:
+                source_url = marker.group(1)
+                text = text[marker.end() :]
         title = _markdown_title(text) or path.stem
-        return [Document(page_content=text, metadata={"title": title, "source": str(path)})]
+        metadata = {"title": title, "source": str(path)}
+        if source_url:
+            metadata["source_url"] = source_url
+        return [Document(page_content=text, metadata=metadata)]
     if extension == ".pdf":
         from pypdf import PdfReader
 
