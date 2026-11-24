@@ -28,6 +28,15 @@ def test_cross_customer_booking_is_same_404_as_missing(crm: TestClient) -> None:
     assert unauthorized.json() == missing.json() == {"detail": "Booking not found"}
 
 
+def test_cross_customer_cancellation_is_same_404_as_missing(crm: TestClient) -> None:
+    unauthorized = crm.post("/bookings/B001/cancel", params={"customer_id": "C002"})
+    missing = crm.post("/bookings/DOES-NOT-EXIST/cancel", params={"customer_id": "C002"})
+
+    assert unauthorized.status_code == missing.status_code == 404
+    assert unauthorized.json() == missing.json() == {"detail": "Booking not found"}
+    assert crm.get("/bookings/B001", params={"customer_id": "C001"}).json()["status"] == "confirmed"
+
+
 def test_cancellation_fee_and_repeat_conflict(crm: TestClient) -> None:
     cancelled = crm.post("/bookings/B001/cancel", params={"customer_id": "C001"})
     assert cancelled.status_code == 200

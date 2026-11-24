@@ -1,10 +1,13 @@
-.PHONY: lint test crm api chat admin mcp
+.PHONY: lint test eval crm api chat admin mcp
 
 lint:
 	ruff check .
 
 test:
-	pytest --basetemp=.pytest_tmp
+	pytest --basetemp=.pytest_tmp -m "not eval" --cov=app --cov-report=term --cov-fail-under=70
+
+eval:
+	pytest --basetemp=.pytest_tmp -m eval tests/evals/test_live_evals.py
 
 crm:
 	uvicorn mock_crm.main:app --host 0.0.0.0 --port 9000 --reload
