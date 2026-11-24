@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -16,6 +17,7 @@ from app.guardrails.injection_rules import PromptInjectionDetector
 from app.guardrails.input_checks import validate_agent_input
 
 _RISKY_ACTIONS = frozenset({"cancel_booking", "refund_booking", "issue_refund"})
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -31,8 +33,21 @@ class AgentServices:
 
 
 def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
-    router = IntentRouter(services.llm, services.prompts, services.intents)
-    action_selector = ActionSelector(services.llm, services.prompts, services.tool_settings)
+    structured_output_method = (
+        "function_calling" if services.config.llm.provider == "groq" else None
+    )
+    router = IntentRouter(
+        services.llm,
+        services.prompts,
+        services.intents,
+        structured_output_method=structured_output_method,
+    )
+    action_selector = ActionSelector(
+        services.llm,
+        services.prompts,
+        services.tool_settings,
+        structured_output_method=structured_output_method,
+    )
     injection_detector = PromptInjectionDetector(
         services.config.guardrails.injection_patterns
     )
@@ -83,6 +98,7 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 "steps": steps + 1,
             }
         except Exception:
+            logger.exception("Intent routing failed; escalating request for human review")
             return {
                 "intent": "complaint",
                 "negative_sentiment": False,
@@ -143,6 +159,7 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
             response = await asyncio.to_thread(services.llm.invoke, messages)
             reply = _message_text(response)
         except Exception:
+            logger.exception("Action selection failed; escalating request for human review")
             return {
                 "steps": steps + 1,
                 "reply": "I could not verify an answer from the policy sources.",
