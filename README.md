@@ -53,27 +53,31 @@ python -m pip install -e ".[dev]"
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and set at least:
+Edit `.env`. To use Groq, set:
 
 ```dotenv
-LLM_PROVIDER=xai
+LLM_PROVIDER=groq
 LLM_MODEL=<model-id>
-XAI_API_KEY=<your-xai-api-key>
+GROQ_API_KEY=<your-groq-api-key>
+GROQ_BASE_URL=https://api.groq.com/openai/v1
 ADMIN_API_KEY=<choose-a-demo-admin-key>
 MCP_API_KEY=<choose-a-demo-mcp-key>
 ```
 
-Do not commit `.env`. To see the model IDs available to your xAI account, run this in
-PowerShell after setting `$env:XAI_API_KEY`:
+Do not commit `.env`. Create a Groq key in the [Groq console](https://console.groq.com/keys).
+To list the model IDs currently available to that key, run this in PowerShell after setting
+`$env:GROQ_API_KEY`:
 
 ```powershell
-Invoke-RestMethod https://api.x.ai/v1/models -Headers @{ Authorization = "Bearer $env:XAI_API_KEY" }
+Invoke-RestMethod https://api.groq.com/openai/v1/models `
+  -Headers @{ Authorization = "Bearer $env:GROQ_API_KEY" }
 ```
 
-Set `LLM_MODEL` to one of the returned IDs. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and
-`OLLAMA_BASE_URL` are used when you select their matching `LLM_PROVIDER`. For optional tracing,
-set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`; `LANGFUSE_HOST` defaults to Langfuse Cloud.
-Tracing stays off when either key is missing or `observability.langfuse_enabled` is false.
+Set `LLM_MODEL` to an active model ID from the response. The app uses its existing OpenAI-compatible
+LangChain client with Groq's documented base URL. You can also select `xai`, `openai`, `anthropic`,
+or `ollama` and provide the matching key or local server. For optional tracing, set
+`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`; `LANGFUSE_HOST` defaults to Langfuse Cloud. Tracing
+stays off when either key is missing or `observability.langfuse_enabled` is false.
 
 ### Optional Hindi and Gujarati translation
 

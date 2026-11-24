@@ -15,7 +15,7 @@ class StrictConfig(BaseModel):
 
 
 class LLMConfig(StrictConfig):
-    provider: Literal["xai", "anthropic", "openai", "ollama"] = "xai"
+    provider: Literal["xai", "groq", "anthropic", "openai", "ollama"] = "xai"
     model: str = ""
     temperature: float = Field(default=0, ge=0, le=2)
     timeout_seconds: float = Field(default=30, gt=0)
@@ -97,6 +97,8 @@ class TranslationConfig(StrictConfig):
 class SecretsConfig(StrictConfig):
     xai_api_key: str | None = None
     xai_base_url: str = "https://api.x.ai/v1"
+    groq_api_key: str | None = None
+    groq_base_url: str = "https://api.groq.com/openai/v1"
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     ollama_base_url: str = "http://localhost:11434"
@@ -176,6 +178,8 @@ def _overlay_environment(
         "CRM_URL": (crm, "url"),
         "XAI_API_KEY": (secrets, "xai_api_key"),
         "XAI_BASE_URL": (secrets, "xai_base_url"),
+        "GROQ_API_KEY": (secrets, "groq_api_key"),
+        "GROQ_BASE_URL": (secrets, "groq_base_url"),
         "ANTHROPIC_API_KEY": (secrets, "anthropic_api_key"),
         "OPENAI_API_KEY": (secrets, "openai_api_key"),
         "OLLAMA_BASE_URL": (secrets, "ollama_base_url"),

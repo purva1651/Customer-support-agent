@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_environment_overrides_yaml_and_env_file(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "LLM_MODEL=from-file\nXAI_API_KEY=file-key\nHF_TOKEN=hf-test\n",
+        "LLM_MODEL=from-file\nXAI_API_KEY=file-key\nGROQ_API_KEY=groq-file-key\n"
+        "HF_TOKEN=hf-test\n",
         encoding="utf-8",
     )
 
@@ -29,6 +30,8 @@ def test_environment_overrides_yaml_and_env_file(tmp_path: Path) -> None:
     assert config.llm.model == "from-process"
     assert config.secrets.openai_api_key == "env-key"
     assert config.secrets.xai_api_key == "file-key"
+    assert config.secrets.groq_api_key == "groq-file-key"
+    assert config.secrets.groq_base_url == "https://api.groq.com/openai/v1"
     assert config.secrets.hf_token == "hf-test"
     assert config.crm.url == "http://localhost:9000"
 
@@ -91,10 +94,27 @@ def test_llm_factory_requires_provider_key() -> None:
         create_chat_model(config)
 
 
+def test_llm_factory_requires_groq_key() -> None:
+    config = AppConfig.model_validate(
+        {
+            "llm": {"provider": "groq", "model": "chosen-model"},
+            "agent": {},
+            "retrieval": {},
+            "api": {},
+            "crm": {},
+            "observability": {},
+        }
+    )
+
+    with pytest.raises(ValueError, match="GROQ_API_KEY"):
+        create_chat_model(config)
+
+
 @pytest.mark.parametrize(
     ("provider", "dependency", "class_name", "credentials"),
     [
         ("xai", "langchain_openai", "ChatOpenAI", {"xai_api_key": "xai-key"}),
+        ("groq", "langchain_openai", "ChatOpenAI", {"groq_api_key": "groq-key"}),
         ("openai", "langchain_openai", "ChatOpenAI", {"openai_api_key": "openai-key"}),
         (
             "anthropic",
@@ -138,3 +158,6 @@ def test_llm_factory_selects_configured_provider(
     if provider == "xai":
         assert captured["base_url"] == "https://api.x.ai/v1"
         assert captured["api_key"] == "xai-key"
+    if provider == "groq":
+        assert captured["base_url"] == "https://api.groq.com/openai/v1"
+        assert captured["api_key"] == "groq-key"

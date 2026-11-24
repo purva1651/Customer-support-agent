@@ -24,6 +24,16 @@ def create_chat_model(config: AppConfig) -> BaseChatModel:
             base_url=config.secrets.xai_base_url,
             api_key=config.secrets.xai_api_key,
         )
+    if config.llm.provider == "groq":
+        if not config.secrets.groq_api_key:
+            raise ValueError("GROQ_API_KEY is required when llm.provider is 'groq'")
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            **common,
+            base_url=config.secrets.groq_base_url,
+            api_key=config.secrets.groq_api_key,
+        )
     if config.llm.provider == "openai":
         if not config.secrets.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required when llm.provider is 'openai'")
