@@ -7,6 +7,7 @@ from app.agent.graph import build_agent_graph
 from app.agent.memory import SessionOwnerStore
 from app.agent.nodes import AgentServices, _format_tool_result, _invoke_tool
 from app.config import AppConfig
+from app.observability.tracing import create_run_config, flush_traces
 from app.schemas import ApprovalResponse, ChatRequest, ChatResponse
 
 
@@ -32,7 +33,11 @@ class AgentRuntime:
             result = await asyncio.wait_for(
                 self._graph.ainvoke(
                     initial_state,
-                    {"configurable": {"thread_id": request.session_id}},
+                    create_run_config(
+                        self._services.config,
+                        request.customer_id,
+                        request.session_id,
+                    ),
                 ),
                 timeout=self._services.config.agent.request_timeout_seconds,
             )
@@ -105,6 +110,7 @@ class AgentRuntime:
 
     async def close(self) -> None:
         await self._checkpoint_connection.close()
+        await asyncio.to_thread(flush_traces, self._services.config)
 
 
 async def create_runtime(
