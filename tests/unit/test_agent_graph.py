@@ -195,6 +195,26 @@ def test_complaint_creates_three_sentence_escalation_ticket(tmp_path: Path) -> N
     asyncio.run(exercise())
 
 
+def test_abusive_message_is_handed_to_a_human(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        runtime, _ = await _make_runtime(tmp_path, _FakeLLM(intent="complaint"))
+        try:
+            response = await runtime.chat(
+                ChatRequest(
+                    customer_id="C001",
+                    session_id="session-abusive",
+                    message="You are useless and I want a human to handle this now.",
+                )
+            )
+            assert response.escalated is True
+            assert response.escalation_summary
+            assert any(call.name == "create_ticket" for call in response.tool_calls)
+        finally:
+            await runtime.close()
+
+    asyncio.run(exercise())
+
+
 def test_action_cannot_supply_customer_identity(tmp_path: Path) -> None:
     async def exercise() -> None:
         llm = _FakeLLM(arguments={"booking_id": "B001", "customer_id": "C002"})
@@ -270,6 +290,30 @@ def test_question_uses_rag_sources_and_low_score_escalates(tmp_path: Path) -> No
             assert low_score_response.sources == []
         finally:
             await low_score_runtime.close()
+
+    asyncio.run(exercise())
+
+
+def test_off_topic_question_with_no_relevant_source_escalates(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        runtime, _ = await _make_runtime(
+            tmp_path,
+            _FakeLLM(intent="question"),
+            _FakeRetriever(score=0.01),
+        )
+        try:
+            response = await runtime.chat(
+                ChatRequest(
+                    customer_id="C001",
+                    session_id="session-off-topic",
+                    message="Can you write a poem about a spaceship?",
+                )
+            )
+            assert response.escalated is True
+            assert response.sources == []
+            assert any(call.name == "create_ticket" for call in response.tool_calls)
+        finally:
+            await runtime.close()
 
     asyncio.run(exercise())
 
