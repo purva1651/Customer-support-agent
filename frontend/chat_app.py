@@ -28,7 +28,11 @@ async def on_chat_start() -> None:
     cl.user_session.set("language", settings.get("language", "English"))
     cl.user_session.set("session_id", cl.context.session.id)
     await cl.Message(
-        content="Hi! Ask a question about your booking or our ticket policies."
+        content=(
+            f"**TicketBuddy support**  ·  Signed in as `{cl.user_session.get('customer_id')}`"
+            f" · {cl.user_session.get('language')}\n\n"
+            "Hi! I can check a booking, explain a ticket policy, or help with a change."
+        )
     ).send()
 
 
@@ -57,8 +61,15 @@ async def on_message(message: cl.Message) -> None:
     finally:
         api.close()
 
+    friendly_steps = {
+        "get_booking_status": "Booking action",
+        "cancel_booking": "Cancellation",
+        "create_ticket": "Support ticket",
+        "update_contact": "Contact update",
+    }
     for call in response.get("tool_calls", []):
-        async with cl.Step(name=call.get("name", "Tool")) as step:
+        tool_name = call.get("name", "Tool")
+        async with cl.Step(name=friendly_steps.get(tool_name, tool_name)) as step:
             step.output = call.get("summary", "Completed")
 
     content = response.get("reply", "")
@@ -76,17 +87,21 @@ async def on_message(message: cl.Message) -> None:
     actions = []
     pending = response.get("pending_action")
     if pending:
-        content += f"\n\n**Approval needed:** {pending['description']}"
+        content = (
+            f"**Please confirm**\n\n"
+            f"{pending['description']}\n\n"
+            "A cancellation fee applies. Choose an option below to continue."
+        )
         action_id = pending["action_id"]
         actions = [
             cl.Action(
                 name="approve_action",
-                label="Yes, approve",
+                label="Yes, go ahead",
                 payload={"action_id": action_id, "approved": True},
             ),
             cl.Action(
                 name="approve_action",
-                label="No, cancel",
+                label="No, keep it",
                 payload={"action_id": action_id, "approved": False},
             ),
         ]

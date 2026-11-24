@@ -1,7 +1,10 @@
 import asyncio
 import json
+import logging
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -9,13 +12,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.approvals import ApprovalStore
 from app.agent.escalation import create_escalation_summary
-from app.agent.router import ActionSelector, IntentRouter
+from app.agent.router import ActionSelection, ActionSelector, IntentRouter
 from app.agent.state import AgentState
 from app.config import AppConfig, IntentDescriptions, PromptTemplates, ToolSettings
 from app.guardrails.injection_rules import PromptInjectionDetector
 from app.guardrails.input_checks import validate_agent_input
 
 _RISKY_ACTIONS = frozenset({"cancel_booking", "refund_booking", "issue_refund"})
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -31,8 +35,21 @@ class AgentServices:
 
 
 def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
-    router = IntentRouter(services.llm, services.prompts, services.intents)
-    action_selector = ActionSelector(services.llm, services.prompts, services.tool_settings)
+    structured_output_method = (
+        "function_calling" if services.config.llm.provider == "groq" else None
+    )
+    router = IntentRouter(
+        services.llm,
+        services.prompts,
+        services.intents,
+        structured_output_method=structured_output_method,
+    )
+    action_selector = ActionSelector(
+        services.llm,
+        services.prompts,
+        services.tool_settings,
+        structured_output_method=structured_output_method,
+    )
     injection_detector = PromptInjectionDetector(
         services.config.guardrails.injection_patterns
     )
@@ -83,6 +100,7 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 "steps": steps + 1,
             }
         except Exception:
+            logger.exception("Intent routing failed; escalating request for human review")
             return {
                 "intent": "complaint",
                 "negative_sentiment": False,
@@ -143,6 +161,7 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
             response = await asyncio.to_thread(services.llm.invoke, messages)
             reply = _message_text(response)
         except Exception:
+            logger.exception("Policy answer generation failed")
             return {
                 "steps": steps + 1,
                 "reply": "I could not verify an answer from the policy sources.",
@@ -171,11 +190,19 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 action_selector.select, state["message"], tools
             )
         except Exception:
-            return {
-                "steps": steps + 1,
-                "escalation_reason": "The requested action could not be selected safely.",
-                "reply": "I couldn't safely determine which support action to take.",
-            }
+            selection = _fallback_booking_selection(state["message"], tools)
+            if selection is None:
+                logger.exception("Action selection failed; escalating request for human review")
+                return {
+                    "steps": steps + 1,
+                    "escalation_reason": "The requested action could not be selected safely.",
+                    "reply": "I couldn't safely determine which support action to take.",
+                    "attempted": "The model could not select a support action safely.",
+                }
+            logger.warning(
+                "Model action selection failed; using a deterministic booking action fallback",
+                exc_info=True,
+            )
 
         name = selection.tool_name
         setting = services.tool_settings.tools.get(name)
@@ -235,7 +262,7 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 ),
                 "attempted": f"Tried the {name} support tool.",
             }
-        summary = _format_tool_result(result)
+        summary = _format_tool_result(result, name)
         return {
             "steps": steps + attempts,
             "reply": summary,
@@ -372,7 +399,62 @@ def _message_text(value: Any) -> str:
     return json.dumps(content, ensure_ascii=False, default=str)
 
 
-def _format_tool_result(value: Any) -> str:
+def _fallback_booking_selection(
+    message: str, tools: Mapping[str, Any]
+) -> ActionSelection | None:
+    booking_match = re.search(r"\b(B\d+)\b", message, flags=re.IGNORECASE)
+    if booking_match is None:
+        return None
+    booking_id = booking_match.group(1).upper()
+    if re.search(r"\b(cancel|cancellation|cancelling|canceling)\b", message, re.I):
+        if "cancel_booking" in tools:
+            return ActionSelection(
+                tool_name="cancel_booking", arguments={"booking_id": booking_id}
+            )
+    if re.search(r"\b(check|look\s*up|lookup|status|track|find)\b", message, re.I):
+        if "get_booking_status" in tools:
+            return ActionSelection(
+                tool_name="get_booking_status", arguments={"booking_id": booking_id}
+            )
+    return None
+
+
+def _format_tool_result(value: Any, tool_name: str | None = None) -> str:
+    if tool_name == "get_booking_status" and isinstance(value, dict):
+        booking_id = value.get("id", value.get("booking_id", "the booking"))
+        status = str(value.get("status", "unknown")).replace("_", " ")
+        lines = [f"Booking {booking_id} is {status}."]
+        if route := value.get("route"):
+            lines.append(f"Route: {route}.")
+        if departure := value.get("departs_at"):
+            try:
+                departure_time = datetime.fromisoformat(str(departure))
+                formatted_time = departure_time.strftime("%B %d, %Y at %I:%M %p")
+                formatted_time = formatted_time.replace(" 0", " ")
+                offset = departure_time.utcoffset()
+                timezone = (
+                    "IST"
+                    if offset == timedelta(hours=5, minutes=30)
+                    else departure_time.strftime("UTC%z")
+                )
+                lines.append(f"Departure: {formatted_time} {timezone}.")
+            except ValueError:
+                lines.append(f"Departure: {departure}.")
+        if seat := value.get("seat"):
+            lines.append(f"Seat: {seat}.")
+        if amount := value.get("amount"):
+            lines.append(f"Amount: ₹{float(amount):,.2f}.")
+        return "\n".join(lines)
+    if tool_name == "cancel_booking" and isinstance(value, dict):
+        booking = value.get("booking", {})
+        booking_id = booking.get("id", booking.get("booking_id", "the booking"))
+        fee = value.get("fee")
+        refund = value.get("refund_amount")
+        return (
+            f"Booking {booking_id} has been cancelled. "
+            f"Cancellation fee: ₹{float(fee):,.2f}. "
+            f"Refund: ₹{float(refund):,.2f}."
+        )
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False, default=str)
     return str(value)

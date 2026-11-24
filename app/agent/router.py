@@ -29,8 +29,14 @@ class IntentRouter:
         llm: Any,
         prompts: PromptTemplates,
         intents: IntentDescriptions,
+        structured_output_method: str | None = None,
     ) -> None:
-        self._model = llm.with_structured_output(RouterDecision)
+        options = (
+            {"method": structured_output_method}
+            if structured_output_method is not None
+            else {}
+        )
+        self._model = llm.with_structured_output(RouterDecision, **options)
         self._system_prompt = prompts.router_system
         self._intents = intents.intents
 
@@ -54,8 +60,19 @@ class IntentRouter:
 
 
 class ActionSelector:
-    def __init__(self, llm: Any, prompts: PromptTemplates, tool_settings: ToolSettings) -> None:
-        self._model = llm.with_structured_output(ActionSelection)
+    def __init__(
+        self,
+        llm: Any,
+        prompts: PromptTemplates,
+        tool_settings: ToolSettings,
+        structured_output_method: str | None = None,
+    ) -> None:
+        options = (
+            {"method": structured_output_method}
+            if structured_output_method is not None
+            else {}
+        )
+        self._model = llm.with_structured_output(ActionSelection, **options)
         self._system_prompt = prompts.action_system
         self._tool_settings = tool_settings
 

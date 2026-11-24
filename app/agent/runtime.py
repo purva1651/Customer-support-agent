@@ -97,7 +97,9 @@ class AgentRuntime:
             setting.timeout_seconds,
             setting.retries,
         )
-        return ApprovalResponse(reply=f"Cancellation result: {_format_tool_result(result)}")
+        return ApprovalResponse(
+            reply=f"{_format_tool_result(result, action.tool_name)}"
+        )
 
     async def _timeout_handoff(self, request: ChatRequest) -> dict[str, Any]:
         summary = await asyncio.to_thread(
