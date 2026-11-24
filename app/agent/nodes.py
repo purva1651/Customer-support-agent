@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -11,7 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.approvals import ApprovalStore
 from app.agent.escalation import create_escalation_summary
-from app.agent.router import ActionSelector, IntentRouter
+from app.agent.router import ActionSelection, ActionSelector, IntentRouter
 from app.agent.state import AgentState
 from app.config import AppConfig, IntentDescriptions, PromptTemplates, ToolSettings
 from app.guardrails.injection_rules import PromptInjectionDetector
@@ -160,7 +161,7 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
             response = await asyncio.to_thread(services.llm.invoke, messages)
             reply = _message_text(response)
         except Exception:
-            logger.exception("Action selection failed; escalating request for human review")
+            logger.exception("Policy answer generation failed")
             return {
                 "steps": steps + 1,
                 "reply": "I could not verify an answer from the policy sources.",
@@ -189,11 +190,19 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 action_selector.select, state["message"], tools
             )
         except Exception:
-            return {
-                "steps": steps + 1,
-                "escalation_reason": "The requested action could not be selected safely.",
-                "reply": "I couldn't safely determine which support action to take.",
-            }
+            selection = _fallback_booking_selection(state["message"], tools)
+            if selection is None:
+                logger.exception("Action selection failed; escalating request for human review")
+                return {
+                    "steps": steps + 1,
+                    "escalation_reason": "The requested action could not be selected safely.",
+                    "reply": "I couldn't safely determine which support action to take.",
+                    "attempted": "The model could not select a support action safely.",
+                }
+            logger.warning(
+                "Model action selection failed; using a deterministic booking action fallback",
+                exc_info=True,
+            )
 
         name = selection.tool_name
         setting = services.tool_settings.tools.get(name)
@@ -388,6 +397,26 @@ def _message_text(value: Any) -> str:
     if isinstance(content, str):
         return content.strip()
     return json.dumps(content, ensure_ascii=False, default=str)
+
+
+def _fallback_booking_selection(
+    message: str, tools: Mapping[str, Any]
+) -> ActionSelection | None:
+    booking_match = re.search(r"\b(B\d+)\b", message, flags=re.IGNORECASE)
+    if booking_match is None:
+        return None
+    booking_id = booking_match.group(1).upper()
+    if re.search(r"\b(cancel|cancellation|cancelling|canceling)\b", message, re.I):
+        if "cancel_booking" in tools:
+            return ActionSelection(
+                tool_name="cancel_booking", arguments={"booking_id": booking_id}
+            )
+    if re.search(r"\b(check|look\s*up|lookup|status|track|find)\b", message, re.I):
+        if "get_booking_status" in tools:
+            return ActionSelection(
+                tool_name="get_booking_status", arguments={"booking_id": booking_id}
+            )
+    return None
 
 
 def _format_tool_result(value: Any, tool_name: str | None = None) -> str:
