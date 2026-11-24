@@ -94,9 +94,21 @@ with analytics_tab:
         top_questions = analytics.get("top_questions", [])
         st.markdown("#### Top questions")
         if top_questions:
-            st.bar_chart({item["question"]: item["count"] for item in top_questions})
+            st.bar_chart(top_questions, x="question", y="count", horizontal=True)
         else:
             st.info("No questions have been recorded yet.")
+        st.markdown("#### Intent breakdown")
+        intent_counts = analytics.get("intent_counts", [])
+        if intent_counts:
+            st.bar_chart(intent_counts, x="intent", y="count")
+        else:
+            st.info("No intent data has been recorded yet.")
+        st.markdown("#### Daily chat volume")
+        daily_chats = analytics.get("daily_chats", [])
+        if daily_chats:
+            st.line_chart(daily_chats, x="date", y="chats")
+        else:
+            st.info("No daily chat data is available yet.")
         st.markdown("#### Unresolved queries")
         unresolved = analytics.get("unresolved", [])
         st.dataframe(unresolved, use_container_width=True, hide_index=True)

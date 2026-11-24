@@ -115,6 +115,11 @@ def test_health_chat_validation_approval_and_analytics(services: AppServices) ->
         assert analytics.json()["resolved"] == 1
         assert analytics.json()["escalated"] == 1
         assert analytics.json()["unresolved"][0]["session_id"] == "s2"
+        assert {item["intent"] for item in analytics.json()["intent_counts"]} == {
+            "question",
+            "complaint",
+        }
+        assert sum(item["chats"] for item in analytics.json()["daily_chats"]) == 2
         escalations = client.get(
             "/admin/escalations", headers={"X-Admin-Key": "test-admin-key"}
         )

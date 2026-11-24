@@ -75,6 +75,29 @@ Set `LLM_MODEL` to one of the returned IDs. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY
 set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`; `LANGFUSE_HOST` defaults to Langfuse Cloud.
 Tracing stays off when either key is missing or `observability.langfuse_enabled` is false.
 
+### Optional Hindi and Gujarati translation
+
+IndicTrans2 response translation is opt-in. The official IndicTransToolkit currently documents
+Linux/macOS rather than native Windows support, so use WSL2 or Linux for this option. In that
+environment, install the optional dependencies and enable translation in `config/agent.yaml`:
+
+```bash
+python -m pip install -e ".[dev,translation]"
+```
+
+```yaml
+translation:
+  enabled: true
+  model: ai4bharat/indictrans2-en-indic-dist-200M
+  device: auto
+```
+
+If Hugging Face requires model access approval, accept the model terms and set `HF_TOKEN` in
+`.env`. The translation model downloads on the first Hindi or Gujarati response and runs locally;
+`device: auto` uses CUDA when available and CPU otherwise. English responses continue through the
+configured chat model without translation. See the [IndicTrans2 project](https://github.com/AI4Bharat/IndicTrans2)
+and the [IndicTransToolkit setup notes](https://github.com/VarunGumma/IndicTransToolkit#configuration).
+
 ## Start the services
 
 Start each service in its own terminal from the repository root, with the virtual environment
@@ -160,6 +183,12 @@ make eval
 
 This sends the 25 prompts in `tests/evals/cases.yaml` to the configured model. Results can vary
 by model and provider settings; it is separate from `make test` and may incur provider charges.
+
+The sentiment escalation threshold is configurable as `agent.sentiment_escalation_threshold`
+in `config/agent.yaml`. The router escalates clearly negative sentiment only when its confidence
+meets that threshold; messages classified as complaints still go to human support immediately.
+Admin analytics include daily chat volume and intent counts alongside resolution, escalation,
+top-question, and unresolved-query data.
 
 ## Main endpoints
 

@@ -148,6 +148,8 @@ def analytics(services: Services) -> AnalyticsResponse:
         escalated=escalated,
         top_questions=top_questions,
         unresolved=unresolved,
+        intent_counts=services.analytics.intent_counts(),
+        daily_chats=services.analytics.daily_chats(),
     )
 
 

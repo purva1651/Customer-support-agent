@@ -74,7 +74,12 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
             )
             return {
                 "intent": decision.intent,
-                "negative_sentiment": decision.negative_sentiment,
+                "negative_sentiment": (
+                    decision.negative_sentiment
+                    and decision.sentiment_confidence
+                    >= services.config.agent.sentiment_escalation_threshold
+                ),
+                "sentiment_confidence": decision.sentiment_confidence,
                 "steps": steps + 1,
             }
         except Exception:
@@ -120,14 +125,18 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 f"Policy text:\n{result.document.page_content}"
             )
             sources.append({"title": title, "url": source})
+        answer_language = (
+            "English"
+            if services.config.translation.enabled
+            else state.get("language", "English")
+        )
         messages = [
             SystemMessage(
                 content=f"{services.prompts.answer_system}\n\nRetrieved context:\n"
                 + "\n\n---\n\n".join(context_parts)
             ),
             HumanMessage(
-                content=f"Answer in {state.get('language', 'English')} to this question: "
-                f"{state['message']}"
+                content=f"Answer in {answer_language} to this question: {state['message']}"
             ),
         ]
         try:
@@ -256,10 +265,15 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 "steps": steps,
                 "escalation_reason": "Agent step limit reached while responding to small talk.",
             }
+        answer_language = (
+            "English"
+            if services.config.translation.enabled
+            else state.get("language", "English")
+        )
         messages = [
             SystemMessage(content=services.prompts.small_talk_system),
             HumanMessage(
-                content=f"Reply in {state.get('language', 'English')} to: {state['message']}"
+                content=f"Reply in {answer_language} to: {state['message']}"
             ),
         ]
         try:

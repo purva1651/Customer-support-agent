@@ -1,9 +1,9 @@
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.schemas import EscalationRecord, TopQuestion, UnresolvedQuery
+from app.schemas import DailyChatCount, EscalationRecord, IntentCount, TopQuestion, UnresolvedQuery
 
 
 class AnalyticsStore:
@@ -109,6 +109,34 @@ class AnalyticsStore:
                 (limit,),
             ).fetchall()
         return [EscalationRecord.model_validate(dict(row)) for row in rows]
+
+    def intent_counts(self) -> list[IntentCount]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT intent, COUNT(*) AS count FROM chat_events GROUP BY intent "
+                "ORDER BY count DESC, intent ASC"
+            ).fetchall()
+        return [IntentCount.model_validate(dict(row)) for row in rows]
+
+    def daily_chats(self, days: int = 14) -> list[DailyChatCount]:
+        if days < 1:
+            raise ValueError("days must be positive")
+        today = datetime.now(UTC).date()
+        start_day = today - timedelta(days=days - 1)
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT date(created_at) AS date, COUNT(*) AS chats FROM chat_events "
+                "WHERE date(created_at) >= ? GROUP BY date(created_at)",
+                (start_day.isoformat(),),
+            ).fetchall()
+        counts = {str(row["date"]): int(row["chats"]) for row in rows}
+        return [
+            DailyChatCount(
+                date=(start_day + timedelta(days=offset)).isoformat(),
+                chats=counts.get((start_day + timedelta(days=offset)).isoformat(), 0),
+            )
+            for offset in range(days)
+        ]
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._path, timeout=10)

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Any
 
 from app.agent.approvals import ApprovalStore
@@ -9,6 +10,8 @@ from app.agent.nodes import AgentServices, _format_tool_result, _invoke_tool
 from app.config import AppConfig
 from app.observability.tracing import create_run_config, flush_traces
 from app.schemas import ApprovalResponse, ChatRequest, ChatResponse
+
+logger = logging.getLogger(__name__)
 
 
 class AgentRuntime:
@@ -43,7 +46,7 @@ class AgentRuntime:
             )
         except TimeoutError:
             result = await self._timeout_handoff(request)
-        return ChatResponse.model_validate(
+        response = ChatResponse.model_validate(
             {
                 "reply": result.get("reply", "I couldn't complete this request safely."),
                 "intent": result.get("intent", "question"),
@@ -54,6 +57,27 @@ class AgentRuntime:
                 "escalation_summary": result.get("escalation_summary"),
             }
         )
+        if self._services.config.translation.enabled and request.language != "English":
+            try:
+                from app.translation.indictrans2 import translate_chat_response
+
+                response = await asyncio.to_thread(
+                    translate_chat_response,
+                    response,
+                    request.language,
+                    self._services.config.translation,
+                    self._services.config.secrets.hf_token,
+                )
+            except Exception:
+                logger.exception("IndicTrans2 response translation failed")
+                response = response.model_copy(
+                    update={
+                        "reply": (
+                            "Translation is temporarily unavailable. " + response.reply
+                        )
+                    }
+                )
+        return response
 
     async def approve(self, action_id: str, approved: bool) -> ApprovalResponse:
         action = self._approvals.consume(action_id, approved)

@@ -102,6 +102,16 @@ class TopQuestion(APIModel):
     count: int = Field(ge=1)
 
 
+class IntentCount(APIModel):
+    intent: Intent
+    count: int = Field(ge=1)
+
+
+class DailyChatCount(APIModel):
+    date: str
+    chats: int = Field(ge=0)
+
+
 class UnresolvedQuery(APIModel):
     question: str
     intent: Intent
@@ -115,6 +125,8 @@ class AnalyticsResponse(APIModel):
     escalated: int = Field(ge=0)
     top_questions: list[TopQuestion]
     unresolved: list[UnresolvedQuery]
+    intent_counts: list[IntentCount] = Field(default_factory=list)
+    daily_chats: list[DailyChatCount] = Field(default_factory=list)
 
 
 class EscalationRecord(APIModel):
