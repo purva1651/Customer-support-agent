@@ -3,6 +3,7 @@ import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -252,7 +253,7 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 ),
                 "attempted": f"Tried the {name} support tool.",
             }
-        summary = _format_tool_result(result)
+        summary = _format_tool_result(result, name)
         return {
             "steps": steps + attempts,
             "reply": summary,
@@ -389,7 +390,42 @@ def _message_text(value: Any) -> str:
     return json.dumps(content, ensure_ascii=False, default=str)
 
 
-def _format_tool_result(value: Any) -> str:
+def _format_tool_result(value: Any, tool_name: str | None = None) -> str:
+    if tool_name == "get_booking_status" and isinstance(value, dict):
+        booking_id = value.get("id", value.get("booking_id", "the booking"))
+        status = str(value.get("status", "unknown")).replace("_", " ")
+        lines = [f"Booking {booking_id} is {status}."]
+        if route := value.get("route"):
+            lines.append(f"Route: {route}.")
+        if departure := value.get("departs_at"):
+            try:
+                departure_time = datetime.fromisoformat(str(departure))
+                formatted_time = departure_time.strftime("%B %d, %Y at %I:%M %p")
+                formatted_time = formatted_time.replace(" 0", " ")
+                offset = departure_time.utcoffset()
+                timezone = (
+                    "IST"
+                    if offset == timedelta(hours=5, minutes=30)
+                    else departure_time.strftime("UTC%z")
+                )
+                lines.append(f"Departure: {formatted_time} {timezone}.")
+            except ValueError:
+                lines.append(f"Departure: {departure}.")
+        if seat := value.get("seat"):
+            lines.append(f"Seat: {seat}.")
+        if amount := value.get("amount"):
+            lines.append(f"Amount: ₹{float(amount):,.2f}.")
+        return "\n".join(lines)
+    if tool_name == "cancel_booking" and isinstance(value, dict):
+        booking = value.get("booking", {})
+        booking_id = booking.get("id", booking.get("booking_id", "the booking"))
+        fee = value.get("fee")
+        refund = value.get("refund_amount")
+        return (
+            f"Booking {booking_id} has been cancelled. "
+            f"Cancellation fee: ₹{float(fee):,.2f}. "
+            f"Refund: ₹{float(refund):,.2f}."
+        )
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False, default=str)
     return str(value)
