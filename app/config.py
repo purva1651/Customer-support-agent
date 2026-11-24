@@ -26,6 +26,7 @@ class AgentConfig(StrictConfig):
     max_steps: int = Field(default=8, ge=1, le=100)
     request_timeout_seconds: float = Field(default=45, gt=0)
     tool_retries: int = Field(default=2, ge=0, le=10)
+    sentiment_escalation_threshold: float = Field(default=0.75, ge=0, le=1)
     memory_path: Path = Path("data/checkpoints.sqlite")
     approval_ttl_seconds: int = Field(default=600, gt=0)
 
@@ -87,6 +88,12 @@ class ObservabilityConfig(StrictConfig):
     langfuse_enabled: bool = True
 
 
+class TranslationConfig(StrictConfig):
+    enabled: bool = False
+    model: str = "ai4bharat/indictrans2-en-indic-dist-200M"
+    device: Literal["auto", "cpu", "cuda"] = "auto"
+
+
 class SecretsConfig(StrictConfig):
     xai_api_key: str | None = None
     xai_base_url: str = "https://api.x.ai/v1"
@@ -98,6 +105,7 @@ class SecretsConfig(StrictConfig):
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
+    hf_token: str | None = None
 
 
 class PromptTemplates(StrictConfig):
@@ -139,6 +147,7 @@ class AppConfig(StrictConfig):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     crm: CRMConfig
     observability: ObservabilityConfig
+    translation: TranslationConfig = Field(default_factory=TranslationConfig)
     guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)
     admin: AdminConfig = Field(default_factory=AdminConfig)
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
@@ -175,6 +184,7 @@ def _overlay_environment(
         "LANGFUSE_PUBLIC_KEY": (secrets, "langfuse_public_key"),
         "LANGFUSE_SECRET_KEY": (secrets, "langfuse_secret_key"),
         "LANGFUSE_HOST": (secrets, "langfuse_host"),
+        "HF_TOKEN": (secrets, "hf_token"),
     }
     for environment_key, (section, config_key) in overrides.items():
         value = environment.get(environment_key)

@@ -13,6 +13,7 @@ class RouterDecision(BaseModel):
 
     intent: Literal["question", "action", "complaint", "small_talk"]
     negative_sentiment: bool
+    sentiment_confidence: float = Field(ge=0, le=1)
 
 
 class ActionSelection(BaseModel):

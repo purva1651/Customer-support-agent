@@ -27,7 +27,11 @@ class _StructuredLLM:
             "\n".join(str(message.content) for message in messages)
         )
         if self._schema is RouterDecision:
-            return RouterDecision(intent=self._owner.intent, negative_sentiment=False)
+            return RouterDecision(
+                intent=self._owner.intent,
+                negative_sentiment=self._owner.negative_sentiment,
+                sentiment_confidence=self._owner.sentiment_confidence,
+            )
         if self._schema is ActionSelection:
             return ActionSelection(
                 tool_name=self._owner.tool_name,
@@ -47,11 +51,15 @@ class _FakeLLM:
         tool_name: str = "cancel_booking",
         arguments: dict[str, Any] | None = None,
         answer: str = "The CRM applies a ten percent fee.",
+        negative_sentiment: bool = False,
+        sentiment_confidence: float = 0,
     ) -> None:
         self.intent = intent
         self.tool_name = tool_name
         self.arguments = arguments or {"booking_id": "B001"}
         self.answer = answer
+        self.negative_sentiment = negative_sentiment
+        self.sentiment_confidence = sentiment_confidence
         self.structured_calls: list[type[Any]] = []
         self.structured_messages: list[str] = []
         self.messages: list[str] = []
@@ -84,12 +92,20 @@ async def _make_runtime(
     tmp_path: Path,
     llm: _FakeLLM,
     retriever: _FakeRetriever | None = None,
+    sentiment_threshold: float | None = None,
 ) -> tuple[Any, list[tuple[str, str]]]:
     files = load_runtime_files()
     config = files.config.model_copy(
         update={
             "agent": files.config.agent.model_copy(
-                update={"memory_path": tmp_path / "checkpoints.sqlite"}
+                update={
+                    "memory_path": tmp_path / "checkpoints.sqlite",
+                    **(
+                        {"sentiment_escalation_threshold": sentiment_threshold}
+                        if sentiment_threshold is not None
+                        else {}
+                    ),
+                }
             )
         }
     )
@@ -209,6 +225,62 @@ def test_abusive_message_is_handed_to_a_human(tmp_path: Path) -> None:
             assert response.escalated is True
             assert response.escalation_summary
             assert any(call.name == "create_ticket" for call in response.tool_calls)
+        finally:
+            await runtime.close()
+
+    asyncio.run(exercise())
+
+
+def test_high_confidence_negative_sentiment_escalates_by_threshold(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        runtime, cancellation_calls = await _make_runtime(
+            tmp_path,
+            _FakeLLM(
+                intent="action",
+                negative_sentiment=True,
+                sentiment_confidence=0.9,
+            ),
+            sentiment_threshold=0.75,
+        )
+        try:
+            response = await runtime.chat(
+                ChatRequest(
+                    customer_id="C001",
+                    session_id="session-sentiment-high",
+                    message="Cancel booking B001 now. This has been a terrible experience.",
+                )
+            )
+            assert response.escalated is True
+            assert response.pending_action is None
+            assert cancellation_calls == []
+        finally:
+            await runtime.close()
+
+    asyncio.run(exercise())
+
+
+def test_low_confidence_negative_sentiment_does_not_force_escalation(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        runtime, cancellation_calls = await _make_runtime(
+            tmp_path,
+            _FakeLLM(
+                intent="action",
+                negative_sentiment=True,
+                sentiment_confidence=0.4,
+            ),
+            sentiment_threshold=0.75,
+        )
+        try:
+            response = await runtime.chat(
+                ChatRequest(
+                    customer_id="C001",
+                    session_id="session-sentiment-low",
+                    message="Please cancel booking B001.",
+                )
+            )
+            assert response.pending_action is not None
+            assert response.escalated is False
+            assert cancellation_calls == []
         finally:
             await runtime.close()
 

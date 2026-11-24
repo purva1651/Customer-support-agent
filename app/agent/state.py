@@ -18,6 +18,7 @@ class AgentState(TypedDict, total=False):
     language: str
     intent: Literal["question", "action", "complaint", "small_talk"]
     negative_sentiment: bool
+    sentiment_confidence: float
     injection_detected: bool
     reply: str
     sources: list[dict[str, str]]
