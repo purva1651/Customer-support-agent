@@ -1,5 +1,5 @@
 intents:
-  question: Ask about ticketing policies, booking details, payments, or procedures.
-  action: Request an allowed operation on the customer's booking or account.
+  question: Ask about general ticketing policies, payment rules, or support procedures.
+  action: Request an allowed operation on the customer's booking or account, including looking up the status or details of a specific booking.
   complaint: Express dissatisfaction, report a problem, or request human help.
   small_talk: Greeting, thanks, or conversation unrelated to support actions.
