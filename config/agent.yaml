@@ -17,6 +17,11 @@ guardrails:
     - '(?i)\b(?:reveal|show|print|repeat)\s+(?:the\s+)?(?:system|developer)\s+(?:prompt|instructions?)\b'
     - '(?i)\b(?:bypass|disable|override)\s+(?:your\s+)?(?:rules|safety|guardrails)\b'
     - '(?i)\bignore\s+your\s+rules\s+and\s+refund\s+everything\b'
+admin:
+  max_upload_bytes: 10485760
+  analytics_unresolved_limit: 50
+  analytics_top_questions_limit: 10
+  escalation_list_limit: 100
 retrieval:
   knowledge_dir: knowledge_base
   persist_dir: data/chroma
@@ -31,6 +36,13 @@ retrieval:
 api:
   host: 0.0.0.0
   port: 8000
+mcp:
+  host: 0.0.0.0
+  port: 8001
+  path: /mcp
+  api_key_header: X-API-Key
+  customer_id_header: X-Customer-ID
+  session_id_header: X-Session-ID
 crm:
   url: http://localhost:9000
 observability:

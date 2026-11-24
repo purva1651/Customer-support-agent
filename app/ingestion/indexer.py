@@ -33,7 +33,7 @@ class KnowledgeIndexer:
         self._entries = self._read_manifest()
         self._cached_chunks: dict[str, list[Document]] = {}
 
-    def sync(self) -> dict[str, list[str]]:
+    def sync(self, force: bool = False) -> dict[str, list[str]]:
         self._knowledge_dir.mkdir(parents=True, exist_ok=True)
         supported_extensions = {".md", ".txt", ".pdf", ".docx"}
         files = sorted(
@@ -53,7 +53,7 @@ class KnowledgeIndexer:
             source = str(path.resolve())
             content_hash = _file_hash(path)
             entry = self._entries.get(source)
-            if entry is None or entry.get("sha256") != content_hash:
+            if force or entry is None or entry.get("sha256") != content_hash:
                 if entry is not None:
                     self._delete_ids(entry.get("chunk_ids", []))
                 chunks = self._chunker.split_documents(load_document(path))
@@ -93,6 +93,42 @@ class KnowledgeIndexer:
         self._keyword_search.replace_documents(
             [chunk for source_chunks in self._cached_chunks.values() for chunk in source_chunks]
         )
+
+    def remove_file(self, source: str) -> bool:
+        root = self._knowledge_dir.resolve()
+        path = Path(source).resolve()
+        if root not in path.parents or not path.is_file():
+            return False
+        path.unlink()
+        self.sync()
+        return True
+
+    def status(self) -> list[dict[str, str | int]]:
+        self.sync()
+        results: list[dict[str, str | int]] = []
+        for source, entry in sorted(self._entries.items()):
+            chunks = self._cached_chunks.get(source, [])
+            title = (
+                str(chunks[0].metadata.get("title", Path(source).stem))
+                if chunks
+                else Path(source).stem
+            )
+            source_url = (
+                str(chunks[0].metadata["source_url"])
+                if chunks and chunks[0].metadata.get("source_url")
+                else source
+            )
+            results.append(
+                {
+                    "title": title,
+                    "source": source,
+                    "url": source_url,
+                    "kind": "url" if source_url != source else "file",
+                    "indexed_chunks": len(entry.get("chunk_ids", [])),
+                    "status": "indexed" if entry.get("chunk_ids") else "empty",
+                }
+            )
+        return results
 
     def _delete_ids(self, ids: list[str]) -> None:
         if ids:

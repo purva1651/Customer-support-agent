@@ -45,6 +45,13 @@ class GuardrailsConfig(StrictConfig):
         return patterns
 
 
+class AdminConfig(StrictConfig):
+    max_upload_bytes: int = Field(default=10_485_760, gt=0)
+    analytics_unresolved_limit: int = Field(default=50, gt=0)
+    analytics_top_questions_limit: int = Field(default=10, gt=0)
+    escalation_list_limit: int = Field(default=100, gt=0)
+
+
 class RetrievalConfig(StrictConfig):
     knowledge_dir: Path = Path("knowledge_base")
     persist_dir: Path = Path("data/chroma")
@@ -61,6 +68,15 @@ class RetrievalConfig(StrictConfig):
 class APIConfig(StrictConfig):
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
+
+
+class MCPConfig(StrictConfig):
+    host: str = "0.0.0.0"
+    port: int = Field(default=8001, ge=1, le=65535)
+    path: str = "/mcp"
+    api_key_header: str = "X-API-Key"
+    customer_id_header: str = "X-Customer-ID"
+    session_id_header: str = "X-Session-ID"
 
 
 class CRMConfig(StrictConfig):
@@ -120,9 +136,11 @@ class AppConfig(StrictConfig):
     agent: AgentConfig
     retrieval: RetrievalConfig
     api: APIConfig
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
     crm: CRMConfig
     observability: ObservabilityConfig
     guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)
+    admin: AdminConfig = Field(default_factory=AdminConfig)
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
 
 

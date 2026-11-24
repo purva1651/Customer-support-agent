@@ -114,7 +114,7 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
         for result in selected:
             metadata = result.document.metadata
             title = str(metadata.get("title", "Policy source"))
-            source = str(metadata.get("source", ""))
+            source = str(metadata.get("source_url", metadata.get("source", "")))
             context_parts.append(
                 f"Source title: {title}\nSource URL: {source}\n"
                 f"Policy text:\n{result.document.page_content}"
