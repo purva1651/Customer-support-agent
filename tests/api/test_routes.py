@@ -127,6 +127,21 @@ def test_health_chat_validation_approval_and_analytics(services: AppServices) ->
         assert escalations.json()["escalations"][0]["ticket_id"] == "T-1009"
 
 
+def test_vite_frontend_origin_is_allowed_by_cors(services: AppServices) -> None:
+    with TestClient(create_app(services)) as client:
+        response = client.options(
+            "/chat",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
 def test_admin_key_is_required(services: AppServices) -> None:
     with TestClient(create_app(services)) as client:
         assert client.get("/admin/knowledge").status_code == 403

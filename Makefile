@@ -1,4 +1,4 @@
-.PHONY: lint test eval crm api chat admin mcp
+.PHONY: lint test eval crm api frontend chat admin mcp
 
 lint:
 	ruff check .
@@ -15,11 +15,12 @@ crm:
 api:
 	uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
 
-chat:
-	streamlit run frontend/chat_app.py --server.port 8002
+frontend:
+	cd frontend && npm run dev -- --host 0.0.0.0
 
-admin:
-	streamlit run frontend/admin_app.py
+chat: frontend
+
+admin: frontend
 
 mcp:
 	python -m app.mcp_server.server
