@@ -17,6 +17,7 @@ from app.schemas import (
     KnowledgeListResponse,
     KnowledgeMutationResponse,
     KnowledgeSourceResponse,
+    KnowledgeTextRequest,
     KnowledgeUrlRequest,
     ReindexResponse,
 )
@@ -50,6 +51,20 @@ def list_knowledge(services: Services) -> KnowledgeListResponse:
             for entry in entries
         ]
     )
+
+
+@router.post("/knowledge/text", response_model=KnowledgeMutationResponse)
+async def add_knowledge_text(
+    request: KnowledgeTextRequest,
+    services: Services,
+) -> KnowledgeMutationResponse:
+    root = services.knowledge_dir.resolve()
+    slug = hashlib.sha256(request.title.casefold().encode("utf-8")).hexdigest()[:16]
+    path = root / "manual" / f"{slug}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# {request.title}\n\n{request.content}\n", encoding="utf-8")
+    await asyncio.to_thread(services.indexer.sync)
+    return _mutation_for_path(services, path.resolve())
 
 
 @router.post("/knowledge/upload", response_model=KnowledgeMutationResponse)

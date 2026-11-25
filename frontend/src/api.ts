@@ -90,6 +90,12 @@ export const api = {
       key,
     );
   },
+  addKnowledgeText: (key: string, title: string, content: string) =>
+    request<{ title: string; url: string; indexed_chunks: number }>(
+      "/admin/knowledge/text",
+      { method: "POST", body: JSON.stringify({ title, content }) },
+      key,
+    ),
   addKnowledgeUrl: (key: string, url: string) =>
     request<{ title: string; url: string; indexed_chunks: number }>(
       "/admin/knowledge/url",

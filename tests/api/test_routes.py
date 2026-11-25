@@ -247,6 +247,20 @@ def test_admin_knowledge_upload_reindex_and_delete(services: AppServices) -> Non
         assert client.get("/admin/knowledge", headers=headers).json()["sources"] == []
 
 
+def test_admin_can_add_knowledge_text(services: AppServices) -> None:
+    headers = {"X-Admin-Key": "test-admin-key"}
+    with TestClient(create_app(services)) as client:
+        response = client.post(
+            "/admin/knowledge/text",
+            headers=headers,
+            json={"title": "Pet policy", "content": "Small pets are allowed in carriers."},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Pet policy"
+    assert response.json()["indexed_chunks"] == 1
+
+
 def test_admin_url_sources_are_persisted_and_private_hosts_rejected(
     services: AppServices,
     monkeypatch: pytest.MonkeyPatch,
