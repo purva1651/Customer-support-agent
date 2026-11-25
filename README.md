@@ -214,6 +214,11 @@ These run Ruff and the CI-safe test suite, excluding live-model evaluations. The
 also reports `app/` coverage and fails below 70%. Retrieval source checks use the local policy
 files and do not need an API key.
 
+To evaluate the full hybrid retrieval stack against the 30 policy questions, run
+`make eval-retrieval`. This loads the configured embedding and reranker models locally and may
+download them on first use. The evaluation checks whether each expected policy source appears in
+the hybrid top five; it does not require a live chat model or API key.
+
 For live router and action-tool evaluations, configure `LLM_PROVIDER`, `LLM_MODEL`, and the
 provider key, then run:
 
@@ -254,6 +259,9 @@ identity headers described above.
   the network endpoints if deploying it beyond a local machine.
 - The CRM is seeded SQLite data. It does not connect to a ticket vendor, payment system, or live
   booking provider.
+- The mock CRM supports booking lookup, cancellation with its configured fee and refund amount,
+  support-ticket creation, and email/phone contact updates. It has no separate refund-request
+  action or address update; `update_contact` is a documented deviation from the checklist wording.
 - Answers are limited to retrieved policy content. If retrieval is weak or a policy is missing,
   the agent says it is unsure and escalates instead of inventing a refund rule.
 - The BGE embedding and reranker models run locally. First startup requires a model download;

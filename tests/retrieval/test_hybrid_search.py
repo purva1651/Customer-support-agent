@@ -13,7 +13,7 @@ from app.retrieval.keyword_search import KeywordSearch
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_thirty_policy_questions_find_expected_source_in_top_five() -> None:
+def test_thirty_policy_questions_find_expected_source_with_keyword_baseline() -> None:
     policy_documents = [
         document
         for path in (ROOT / "knowledge_base").glob("*.md")
