@@ -224,10 +224,13 @@ provider key, then run:
 
 ```powershell
 make eval
+make eval-retrieval
 ```
 
-This sends the 25 prompts in `tests/evals/cases.yaml` to the configured model. Results can vary
-by model and provider settings; it is separate from `make test` and may incur provider charges.
+`make eval` sends the 25 prompts in `tests/evals/cases.yaml` to the configured model. Results can
+vary by model and provider settings; it is separate from `make test` and may incur provider charges.
+`make eval-retrieval` checks the 30 policy questions against the production hybrid retriever.
+Retrieval model downloads may be needed on first use.
 
 The sentiment escalation threshold is configurable as `agent.sentiment_escalation_threshold`
 in `config/agent.yaml`. The router escalates clearly negative sentiment only when its confidence

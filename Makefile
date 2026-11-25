@@ -10,7 +10,7 @@ eval:
 	pytest --basetemp=.pytest_tmp -m eval tests/evals/test_live_evals.py
 
 eval-retrieval:
-	pytest --basetemp=.pytest_tmp -m eval tests/evals/test_hybrid_retrieval.py
+	pytest -m eval tests/evals/test_hybrid_retrieval.py
 
 crm:
 	uvicorn mock_crm.main:app --host 0.0.0.0 --port 9000 --reload
