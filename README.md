@@ -3,14 +3,14 @@
 A demo customer support agent for bus, movie, and event tickets. It answers policy questions
 from a local knowledge base, checks and changes bookings through a mock CRM, asks for approval
 before cancellation, remembers each customer session, and escalates uncertain or unhappy cases.
-It provides a REST API, an MCP server, and Streamlit customer chat and admin interfaces.
+It provides a REST API, an MCP server, and a React + Vite customer chat and admin interface.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Chat[Streamlit customer chat] --> API[FastAPI REST API]
-    Admin[Streamlit admin panel] --> API
+    Chat[React customer chat] --> API[FastAPI REST API]
+    Admin[React admin panel] --> API
     MCP[MCP Streamable HTTP server] --> Agent[Shared LangGraph agent]
     API --> Agent
     Agent --> Guard[Input checks and injection guardrails]
@@ -32,6 +32,7 @@ customer-bound approval through `POST /approve`. Admin endpoints require `X-Admi
 ## Requirements
 
 - Python 3.11 or newer
+- Node.js 20 or newer and npm
 - Git
 - Internet access for package installation, the configured chat model, and first-time local
   embedding/reranker downloads
@@ -50,6 +51,9 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
+Set-Location frontend
+npm install
+Set-Location ..
 Copy-Item .env.example .env
 ```
 
@@ -140,12 +144,11 @@ starts; this can take several minutes and needs disk space.
 | --- | --- | --- | --- |
 | Mock CRM | `make crm` | `python -m uvicorn mock_crm.main:app --reload --port 9000` | `http://localhost:9000` |
 | Agent REST API | `make api` | `python -m uvicorn app.api.main:app --reload --port 8000` | `http://localhost:8000` |
-| Customer chat | `make chat` | `python -m streamlit run frontend/chat_app.py --server.port 8002` | `http://localhost:8002` |
-| Admin panel | `make admin` | `python -m streamlit run frontend/admin_app.py --server.port 8501` | `http://localhost:8501` |
+| Customer chat + admin panel | `make frontend` | `Set-Location frontend; npm run dev` | `http://localhost:5173` |
 | MCP server (optional) | `make mcp` | `python -m app.mcp_server.server` | `http://localhost:8001/mcp` |
 
-The chat starts with demo customer `C001`; change the customer ID and response language in the
-sidebar. The seeded CRM also has customer `C002`; the seeded bookings are `B001`, `B002`, and
+The chat starts with demo customer `C001`; change the customer ID and response language in chat
+settings. The seeded CRM also has customer `C002`; the seeded bookings are `B001`, `B002`, and
 `B003`. In the admin panel, enter the same `ADMIN_API_KEY` configured for the API.
 
 ## Try the REST API
