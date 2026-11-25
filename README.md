@@ -253,9 +253,17 @@ top-question, and unresolved-query data.
 | `GET` | `/admin/analytics` | Chat, resolution, and top-question metrics |
 | `GET` | `/admin/escalations` | Human handoff summaries and status (pending, accepted, rejected, or closed) |
 | `POST` | `/admin/escalations/{id}/decision` | Accept or reject a pending human handoff |
+| `GET` | `/admin/escalations/{id}/messages` | View a saved conversation after accepting the case |
+| `POST` | `/admin/escalations/{id}/messages` | Reply to a customer in an accepted case |
+| `GET` | `/chat/messages?customer_id=...&session_id=...` | Read the customer's conversation and agent replies |
 
 All `/admin/*` routes require `X-Admin-Key`. The MCP endpoint uses its separate MCP API key and
 identity headers described above.
+
+Escalated customer and assistant messages are saved to the local conversation store. Accepting a
+case opens its saved thread in the admin panel; agent replies appear in the customer's open chat.
+Pending cases remain in the escalation list until accepted or rejected, and closed threads remain
+available to admins for review.
 
 ## Known limits and troubleshooting
 

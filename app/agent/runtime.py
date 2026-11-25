@@ -72,7 +72,13 @@ class AgentRuntime:
 
     def validate_session(self, request: ChatRequest) -> None:
         """Verify this customer owns the conversation before handling a local command."""
-        self._sessions.bind(request.session_id, request.customer_id)
+        self.validate_session_ids(request.session_id, request.customer_id)
+
+    def validate_session_ids(self, session_id: str, customer_id: str) -> None:
+        self._sessions.bind(session_id, customer_id)
+
+    def verify_session_ids(self, session_id: str, customer_id: str) -> None:
+        self._sessions.verify(session_id, customer_id)
 
     async def notice(self, request: ChatRequest, reply: str) -> ChatResponse:
         self.validate_session(request)

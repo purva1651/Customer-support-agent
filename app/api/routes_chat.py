@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from app.agent.approvals import ExpiredApproval, UnknownApproval, UsedApproval
@@ -19,6 +19,7 @@ from app.schemas import (
     ApprovalResponse,
     ChatRequest,
     ChatResponse,
+    ConversationMessagesResponse,
     DocumentExtractionResponse,
     HealthResponse,
 )
@@ -51,18 +52,44 @@ def health() -> HealthResponse:
     return HealthResponse()
 
 
+@router.get("/chat/messages", response_model=ConversationMessagesResponse)
+def customer_escalation_messages(
+    customer_id: Annotated[str, Query(min_length=1, max_length=64)],
+    session_id: Annotated[str, Query(min_length=1, max_length=128)],
+    services: Services,
+) -> ConversationMessagesResponse:
+    try:
+        services.runtime.verify_session_ids(session_id, customer_id)
+        escalation_id, status, messages = services.analytics.customer_escalation_messages(
+            customer_id, session_id
+        )
+    except SessionOwnershipError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ConversationMessagesResponse(
+        escalation_id=escalation_id,
+        status=status,
+        messages=messages,
+    )
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
     services: Services,
 ) -> ChatResponse:
     normalized_message = request.message.strip().casefold()
+    current_escalation = services.analytics.current_escalation(
+        request.customer_id, request.session_id
+    )
     if normalized_message == "close":
         try:
             services.runtime.validate_session(request)
         except SessionOwnershipError as exc:
             raise HTTPException(status_code=404, detail="Session not found") from exc
-        if services.analytics.has_open_escalation(request.customer_id, request.session_id):
+        active_status = current_escalation[1] if current_escalation else None
+        if active_status in {"pending", "accepted"}:
             closed = services.analytics.close_open_escalation(
                 request.customer_id, request.session_id
             )
@@ -72,41 +99,75 @@ async def chat(
                 else "Your support case is already closed. Send a new message "
                 "if you need help again."
             )
+        elif active_status == "closed":
+            reply = (
+                "Your support case is already closed. Send a new message "
+                "if you need help again."
+            )
         else:
             reply = "There is no open human support case in this chat to close."
         response = await services.runtime.notice(request, reply)
-        try:
-            services.analytics.log_chat(
-                customer_id=request.customer_id,
-                session_id=request.session_id,
-                question=request.message,
-                intent=response.intent,
-                resolved=True,
-                escalated=False,
-                escalation_summary=None,
-                tool_calls=[],
-            )
-        except Exception:
-            pass
-        return response
-
-    try:
-        response = await services.runtime.chat(request)
-    except SessionOwnershipError as exc:
-        raise HTTPException(status_code=404, detail="Session not found") from exc
-    try:
+        escalation_id = current_escalation[0] if current_escalation else None
         services.analytics.log_chat(
             customer_id=request.customer_id,
             session_id=request.session_id,
             question=request.message,
             intent=response.intent,
-            resolved=not response.escalated and response.pending_action is None,
-            escalated=response.escalated,
-            escalation_summary=response.escalation_summary,
-            tool_calls=[call.model_dump() for call in response.tool_calls],
+            resolved=True,
+            escalated=False,
+            escalation_summary=None,
+            tool_calls=[],
+            assistant_message=response.reply,
+            escalation_id=escalation_id,
         )
-    except Exception:
-        pass
+        escalation_status = (
+            "closed" if active_status in {"pending", "accepted", "closed"} else None
+        )
+        return response.model_copy(update={"escalation_status": escalation_status})
+
+    if current_escalation and current_escalation[1] in {"pending", "accepted"}:
+        try:
+            services.runtime.validate_session(request)
+        except SessionOwnershipError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+        status = current_escalation[1]
+        reply = (
+            "Your message has been added to the support case. It is waiting for an agent."
+            if status == "pending"
+            else "Your message has been sent to the support agent handling your case."
+        )
+        response = await services.runtime.notice(request, reply)
+        services.analytics.log_chat(
+            customer_id=request.customer_id,
+            session_id=request.session_id,
+            question=request.message,
+            intent=response.intent,
+            resolved=False,
+            escalated=False,
+            escalation_summary=None,
+            tool_calls=[],
+            assistant_message=response.reply,
+            escalation_id=current_escalation[0],
+        )
+        return response.model_copy(update={"escalation_status": status})
+
+    try:
+        response = await services.runtime.chat(request)
+    except SessionOwnershipError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+    escalation_id = services.analytics.log_chat(
+        customer_id=request.customer_id,
+        session_id=request.session_id,
+        question=request.message,
+        intent=response.intent,
+        resolved=not response.escalated and response.pending_action is None,
+        escalated=response.escalated,
+        escalation_summary=response.escalation_summary,
+        tool_calls=[call.model_dump() for call in response.tool_calls],
+        assistant_message=response.reply,
+    )
+    if escalation_id is not None:
+        response = response.model_copy(update={"escalation_status": "pending"})
     return response
 
 

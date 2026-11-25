@@ -48,6 +48,7 @@ class ChatResponse(APIModel):
     pending_action: PendingActionResponse | None = None
     escalated: bool = False
     escalation_summary: str | None = None
+    escalation_status: Literal["pending", "accepted", "rejected", "closed"] | None = None
 
 
 class ApprovalRequest(APIModel):
@@ -166,6 +167,30 @@ class EscalationDecisionRequest(APIModel):
 class EscalationDecisionResponse(APIModel):
     id: int
     status: Literal["accepted", "rejected"]
+
+
+class ConversationMessage(APIModel):
+    id: int
+    sender: Literal["customer", "assistant", "admin"]
+    content: str
+    created_at: str
+
+
+class ConversationMessagesResponse(APIModel):
+    escalation_id: int
+    status: Literal["pending", "accepted", "rejected", "closed"]
+    messages: list[ConversationMessage]
+
+
+class AdminReplyRequest(APIModel):
+    content: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Reply cannot be blank")
+        return value.strip()
 
 
 class EscalationsResponse(APIModel):

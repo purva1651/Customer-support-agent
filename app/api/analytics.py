@@ -3,7 +3,14 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.schemas import DailyChatCount, EscalationRecord, IntentCount, TopQuestion, UnresolvedQuery
+from app.schemas import (
+    ConversationMessage,
+    DailyChatCount,
+    EscalationRecord,
+    IntentCount,
+    TopQuestion,
+    UnresolvedQuery,
+)
 
 
 class AnalyticsStore:
@@ -31,6 +38,18 @@ class AnalyticsStore:
                     ticket_id TEXT,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS conversation_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    escalation_id INTEGER,
+                    chat_event_id INTEGER UNIQUE,
+                    customer_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    sender TEXT NOT NULL CHECK (sender IN ('customer', 'assistant', 'admin')),
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_conversation_messages_escalation
+                    ON conversation_messages(escalation_id, id);
                 """
             )
             escalation_columns = {
@@ -42,6 +61,20 @@ class AnalyticsStore:
                     "ALTER TABLE escalation_events "
                     "ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
                 )
+            connection.execute(
+                """INSERT OR IGNORE INTO conversation_messages
+                   (escalation_id, chat_event_id, customer_id, session_id,
+                    sender, content, created_at)
+                   SELECT (
+                       SELECT escalation.id FROM escalation_events AS escalation
+                       WHERE escalation.customer_id = chat.customer_id
+                         AND escalation.session_id = chat.session_id
+                         AND escalation.created_at >= chat.created_at
+                       ORDER BY escalation.created_at ASC, escalation.id ASC LIMIT 1
+                   ), chat.id, chat.customer_id, chat.session_id, 'customer',
+                      chat.question, chat.created_at
+                   FROM chat_events AS chat"""
+            )
 
     def log_chat(
         self,
@@ -53,11 +86,13 @@ class AnalyticsStore:
         escalated: bool,
         escalation_summary: str | None,
         tool_calls: list[dict[str, str]],
-    ) -> None:
+        assistant_message: str = "",
+        escalation_id: int | None = None,
+    ) -> int | None:
         created_at = datetime.now(UTC).isoformat()
         ticket_id = _ticket_id(tool_calls)
         with self._connect() as connection:
-            connection.execute(
+            chat_event = connection.execute(
                 """INSERT INTO chat_events
                    (customer_id, session_id, question, intent, resolved, escalated, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -71,13 +106,58 @@ class AnalyticsStore:
                     created_at,
                 ),
             )
+            created_escalation_id = None
             if escalated and escalation_summary:
-                connection.execute(
+                escalation = connection.execute(
                     """INSERT INTO escalation_events
                        (customer_id, session_id, summary, ticket_id, created_at)
                        VALUES (?, ?, ?, ?, ?)""",
                     (customer_id, session_id, escalation_summary, ticket_id, created_at),
                 )
+                created_escalation_id = int(escalation.lastrowid)
+                connection.execute(
+                    """UPDATE conversation_messages SET escalation_id = ?
+                       WHERE customer_id = ? AND session_id = ? AND escalation_id IS NULL""",
+                    (created_escalation_id, customer_id, session_id),
+                )
+            target_escalation_id = escalation_id or created_escalation_id
+            if target_escalation_id is None:
+                active_escalation = connection.execute(
+                    """SELECT id FROM escalation_events WHERE customer_id = ? AND session_id = ?
+                       AND status IN ('pending', 'accepted')
+                       ORDER BY id DESC LIMIT 1""",
+                    (customer_id, session_id),
+                ).fetchone()
+                if active_escalation is not None:
+                    target_escalation_id = int(active_escalation["id"])
+            connection.execute(
+                """INSERT INTO conversation_messages
+                   (escalation_id, chat_event_id, customer_id, session_id,
+                    sender, content, created_at)
+                   VALUES (?, ?, ?, ?, 'customer', ?, ?)""",
+                (
+                    target_escalation_id,
+                    int(chat_event.lastrowid),
+                    customer_id,
+                    session_id,
+                    question,
+                    created_at,
+                ),
+            )
+            if assistant_message:
+                connection.execute(
+                    """INSERT INTO conversation_messages
+                       (escalation_id, customer_id, session_id, sender, content, created_at)
+                       VALUES (?, ?, ?, 'assistant', ?, ?)""",
+                    (
+                        target_escalation_id,
+                        customer_id,
+                        session_id,
+                        assistant_message,
+                        created_at,
+                    ),
+                )
+        return target_escalation_id
 
     def summary(
         self, top_limit: int = 10, unresolved_limit: int = 50
@@ -161,6 +241,82 @@ class AnalyticsStore:
                 (customer_id, session_id),
             )
         return cursor.rowcount > 0
+
+    def current_escalation(
+        self, customer_id: str, session_id: str
+    ) -> tuple[int, str] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT id, status FROM escalation_events
+                   WHERE customer_id = ? AND session_id = ?
+                   ORDER BY id DESC LIMIT 1""",
+                (customer_id, session_id),
+            ).fetchone()
+        return (int(row["id"]), str(row["status"])) if row is not None else None
+
+    def customer_escalation_messages(
+        self, customer_id: str, session_id: str
+    ) -> tuple[int, str, list[ConversationMessage]]:
+        escalation = self.current_escalation(customer_id, session_id)
+        if escalation is None:
+            raise LookupError("No escalation exists for this chat")
+        escalation_id, status = escalation
+        messages = self._conversation_messages(escalation_id)
+        return escalation_id, status, messages
+
+    def admin_escalation_messages(
+        self, escalation_id: int
+    ) -> tuple[str, list[ConversationMessage]]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT status FROM escalation_events WHERE id = ?", (escalation_id,)
+            ).fetchone()
+        if row is None:
+            raise LookupError("Escalation not found")
+        status = str(row["status"])
+        if status not in {"accepted", "closed"}:
+            raise ValueError("Accept the case before opening its conversation")
+        return status, self._conversation_messages(escalation_id)
+
+    def add_admin_reply(self, escalation_id: int, content: str) -> ConversationMessage:
+        created_at = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            escalation = connection.execute(
+                """SELECT customer_id, session_id, status FROM escalation_events WHERE id = ?""",
+                (escalation_id,),
+            ).fetchone()
+            if escalation is None:
+                raise LookupError("Escalation not found")
+            if escalation["status"] != "accepted":
+                raise ValueError("Accept the case before replying")
+            cursor = connection.execute(
+                """INSERT INTO conversation_messages
+                   (escalation_id, customer_id, session_id, sender, content, created_at)
+                   VALUES (?, ?, ?, 'admin', ?, ?)""",
+                (
+                    escalation_id,
+                    escalation["customer_id"],
+                    escalation["session_id"],
+                    content,
+                    created_at,
+                ),
+            )
+            row_id = int(cursor.lastrowid)
+        return ConversationMessage(
+            id=row_id,
+            sender="admin",
+            content=content,
+            created_at=created_at,
+        )
+
+    def _conversation_messages(self, escalation_id: int) -> list[ConversationMessage]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT id, sender, content, created_at FROM conversation_messages
+                   WHERE escalation_id = ? ORDER BY id ASC""",
+                (escalation_id,),
+            ).fetchall()
+        return [ConversationMessage.model_validate(dict(row)) for row in rows]
 
     def intent_counts(self) -> list[IntentCount]:
         with self._connect() as connection:

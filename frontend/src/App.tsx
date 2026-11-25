@@ -1,6 +1,6 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState, Dispatch, SetStateAction } from "react";
 import ReactMarkdown from "react-markdown";
-import { api, Analytics, ChatResult, Escalation, KnowledgeSource, sourceHref } from "./api";
+import { api, Analytics, ChatResult, ConversationMessage, Escalation, KnowledgeSource, sourceHref } from "./api";
 
 type ChatMessage = {
   id: string;
@@ -8,6 +8,8 @@ type ChatMessage = {
   content: string;
   result?: ChatResult;
   approvalRecorded?: boolean;
+  serverMessageId?: number;
+  humanAgent?: boolean;
 };
 type Role = "customer" | "admin";
 type AdminTab = "knowledge" | "playground" | "analytics" | "escalations" | "redteam";
@@ -40,6 +42,25 @@ function makeId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function sessionStorageKey(customerId: string): string {
+  return `ticketbuddy-session-${customerId}`;
+}
+
+function messagesStorageKey(customerId: string, sessionId: string): string {
+  return `ticketbuddy-messages-${customerId}-${sessionId}`;
+}
+
+function readSavedMessages(customerId: string, sessionId: string): ChatMessage[] {
+  try {
+    const saved = localStorage.getItem(messagesStorageKey(customerId, sessionId));
+    if (!saved) return [];
+    const parsed: unknown = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed as ChatMessage[] : [];
+  } catch {
+    return [];
+  }
+}
+
 function Brand() {
   return (
     <a className="brand" href="#chat" aria-label="TicketBuddy home">
@@ -68,10 +89,13 @@ function App() {
   }, []);
 
   const customerLogin = (id: string, replyLanguage: string) => {
+    const key = sessionStorageKey(id);
+    const savedSessionId = localStorage.getItem(key) || makeId();
+    localStorage.setItem(key, savedSessionId);
     setCustomerId(id);
     setLanguage(replyLanguage);
-    setSessionId(makeId());
-    setMessages([]);
+    setSessionId(savedSessionId);
+    setMessages(readSavedMessages(id, savedSessionId));
     setRole("customer");
     window.history.replaceState(null, "", "#chat");
   };
@@ -82,7 +106,9 @@ function App() {
     window.history.replaceState(null, "", "#admin");
   };
   const newChat = () => {
-    setSessionId(makeId());
+    const nextSessionId = makeId();
+    localStorage.setItem(sessionStorageKey(customerId), nextSessionId);
+    setSessionId(nextSessionId);
     setMessages([]);
   };
   const signOut = () => {
@@ -246,10 +272,108 @@ function ChatPage(props: ChatPageProps) {
   const [error, setError] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [escalationStatus, setEscalationStatus] = useState<ChatResult["escalation_status"]>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const bookings = DEMO_BOOKINGS[props.customerId as keyof typeof DEMO_BOOKINGS] || [];
   const customerName = props.customerId === "C001" ? "Aarav Patel" : "Maya Shah";
+  const hasEscalatedChat = escalationStatus !== null;
+
+  useEffect(() => {
+    setEscalationStatus(null);
+  }, [props.sessionId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.customerMessages(props.customerId, props.sessionId).then((thread) => {
+      if (cancelled) return;
+      setEscalationStatus(thread.status);
+      const restored = thread.messages.map((message) => ({
+        id: `server-${message.id}`,
+        serverMessageId: message.id,
+        role: message.sender === "customer" ? "user" as const : "assistant" as const,
+        content: message.content,
+        humanAgent: message.sender === "admin",
+      }));
+      props.setMessages((current) => {
+        const existingCounts = new Map<string, number>();
+        for (const message of current) {
+          const sender = message.role === "user" ? "customer" : message.humanAgent ? "admin" : "assistant";
+          const content = message.content.replace(/^🚩 \*\*Escalated to a support specialist\*\*\s*/, "").trim();
+          const key = `${sender}:${content}`;
+          existingCounts.set(key, (existingCounts.get(key) ?? 0) + 1);
+        }
+        const missing = restored.filter((message) => {
+          const sender = message.role === "user" ? "customer" : message.humanAgent ? "admin" : "assistant";
+          const key = `${sender}:${message.content.trim()}`;
+          const count = existingCounts.get(key) ?? 0;
+          if (count > 0) {
+            existingCounts.set(key, count - 1);
+            return false;
+          }
+          return true;
+        });
+        return [...current, ...missing];
+      });
+    }).catch(() => {
+      // New chats have no saved server transcript yet.
+    });
+    return () => { cancelled = true; };
+  }, [props.customerId, props.sessionId, props.setMessages]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        messagesStorageKey(props.customerId, props.sessionId),
+        JSON.stringify(props.messages),
+      );
+    } catch {
+      // Keep chat usable if local storage is unavailable or full.
+    }
+  }, [props.customerId, props.messages, props.sessionId]);
+
+  useEffect(() => {
+    if (!hasEscalatedChat || escalationStatus === "closed" || escalationStatus === "rejected") return;
+    let cancelled = false;
+    const loadAgentReplies = async () => {
+      try {
+        const thread = await api.customerMessages(props.customerId, props.sessionId);
+        if (cancelled) return;
+        setEscalationStatus(thread.status);
+        if (thread.status === "accepted" && escalationStatus !== "accepted") {
+          props.setMessages((current) => [
+            ...current,
+            { id: makeId(), role: "assistant", content: "A support agent accepted your case. You can continue messaging here." },
+          ]);
+        }
+        const replies = thread.messages.filter((message) => message.sender === "admin");
+        props.setMessages((current) => {
+          const knownIds = new Set(
+            current.map((message) => message.serverMessageId).filter((id): id is number => id !== undefined),
+          );
+          const unseen = replies.filter((message) => !knownIds.has(message.id));
+          return [
+            ...current,
+            ...unseen.map((message) => ({
+              id: `server-${message.id}`,
+              serverMessageId: message.id,
+              humanAgent: true,
+              role: "assistant" as const,
+              content: message.content,
+            })),
+          ];
+        });
+      } catch {
+        // Keep chat usable during short API restarts; the next poll will retry.
+      }
+    };
+    void loadAgentReplies();
+    const timer = window.setInterval(() => void loadAgentReplies(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [escalationStatus, hasEscalatedChat, props.customerId, props.sessionId, props.setMessages]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -258,6 +382,12 @@ function ChatPage(props: ChatPageProps) {
   const send = useCallback(async (raw: string) => {
     const message = raw.trim();
     if (!message || busy) return;
+    if (
+      message.toLocaleLowerCase() !== "close"
+      && (escalationStatus === "closed" || escalationStatus === "rejected")
+    ) {
+      setEscalationStatus(null);
+    }
     setError("");
     setBusy(true);
     setDraft("");
@@ -269,6 +399,7 @@ function ChatPage(props: ChatPageProps) {
         message,
         language: props.language,
       });
+      if (result.escalation_status) setEscalationStatus(result.escalation_status);
       const content = result.escalated ? `🚩 **Escalated to a support specialist**\n\n${result.reply}` : result.reply;
       props.setMessages((current) => [...current, {
         id: makeId(), role: "assistant", content,
@@ -283,7 +414,7 @@ function ChatPage(props: ChatPageProps) {
     } finally {
       setBusy(false);
     }
-  }, [busy, props]);
+  }, [busy, escalationStatus, props]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -384,6 +515,11 @@ function ChatPage(props: ChatPageProps) {
         {suggestions.map((suggestion) => <button key={suggestion} onClick={() => void send(suggestion)}>{suggestion}<span>↗</span></button>)}
       </div>
       {error && <div className="error-banner" role="alert">{error}</div>}
+      {hasEscalatedChat && escalationStatus && <div className={`customer-escalation-status ${escalationStatus}`} role="status">
+        {escalationStatus === "pending" ? "Your support case is waiting for an agent. Messages you send here are saved to the case." :
+          escalationStatus === "accepted" ? "A support agent is handling this case. Replies will appear here." :
+            escalationStatus === "closed" ? "This support conversation is closed." : "This support case was not accepted."}
+      </div>}
       {file && <div className="file-chip">📎 {file.name}<button onClick={() => { setFile(null); if (fileInput.current) fileInput.current.value = ""; }} aria-label="Remove attachment">×</button></div>}
       <form className="composer" onSubmit={(event) => void submit(event)}>
         <input ref={fileInput} className="visually-hidden" type="file" accept=".pdf,.docx,.jpg,.jpeg,.png" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
@@ -412,10 +548,11 @@ function MessageView({ message, busy, onApprove }: {
   const result = message.result;
   return (
     <article className={`message-row ${message.role}`}>
-      {message.role === "assistant" && <div className="assistant-avatar">TB</div>}
+          {message.role === "assistant" && <div className="assistant-avatar">{message.humanAgent ? "AG" : "TB"}</div>}
       <div className="message-content">
         {result && <div className="message-chips"><span>Intent: {result.intent}</span>{result.tool_calls.map((call, index) => <span key={`${call.name}-${index}`}>Used {call.name}</span>)}{result.pending_action && <span>Approval required</span>}</div>}
-        <div className={message.role === "user" ? "bubble user-bubble" : "bubble assistant-bubble"}>
+        <div className={`${message.role === "user" ? "bubble user-bubble" : "bubble assistant-bubble"}${message.humanAgent ? " human-agent-bubble" : ""}`}>
+          {message.humanAgent && <strong className="human-agent-label">Support agent</strong>}
           <ReactMarkdown>{message.content}</ReactMarkdown>
           {result?.tool_calls.map((call, index) => <BookingCard key={`${call.name}-${index}`} call={call} />)}
           {result?.pending_action && !message.approvalRecorded && (
@@ -616,6 +753,8 @@ function AdminPage({ adminKey, tab, setTab }: { adminKey: string; tab: AdminTab;
         entries={escalations}
         loading={loading}
         working={working}
+        adminKey={adminKey}
+        onRefresh={() => void refresh()}
         onDecision={(id, decision) => void withAction(
           () => api.decideEscalation(adminKey, id, decision),
           decision === "accepted" ? "Escalation accepted." : "Escalation rejected.",
@@ -755,17 +894,104 @@ function EscalationsPanel({
   entries,
   loading,
   working,
+  adminKey,
+  onRefresh,
   onDecision,
 }: {
   entries: Escalation[];
   loading: boolean;
   working: boolean;
+  adminKey: string;
+  onRefresh: () => void;
   onDecision: (id: number, decision: "accepted" | "rejected") => void;
 }) {
   return (
     <section className="admin-section">
-      <h1>Escalations</h1><p className="section-intro">Accept cases you will handle, or reject them. Decisions are saved for the support team.</p>
-      {!entries.length ? <div className="empty-card">{loading ? "Loading handoffs…" : "There are no escalations yet."}</div> : <div className="escalation-list">{entries.map((entry) => <article className="escalation-card" key={entry.id}><div className="escalation-meta"><span className="escalation-id">{entry.ticket_id || "Support case"}</span><span>{entry.customer_id}</span><span className={`escalation-status ${entry.status}`}>{entry.status}</span><time>{formatDate(entry.created_at)}</time></div><p>{entry.summary}</p><small>Session {entry.session_id}</small>{entry.status === "pending" && <div className="escalation-actions"><button type="button" className="button primary small" disabled={working} onClick={() => onDecision(entry.id, "accepted")}>Accept case</button><button type="button" className="button secondary small" disabled={working} onClick={() => onDecision(entry.id, "rejected")}>Reject</button></div>}</article>)}</div>}
+      <h1>Escalations</h1><p className="section-intro">Accept a case to open its saved conversation and reply to the customer.</p>
+      {!entries.length ? <div className="empty-card">{loading ? "Loading handoffs…" : "There are no escalations yet."}</div> : <div className="escalation-list">{entries.map((entry) => <article className="escalation-card" key={entry.id}><div className="escalation-meta"><span className="escalation-id">{entry.ticket_id || "Support case"}</span><span>{entry.customer_id}</span><span className={`escalation-status ${entry.status}`}>{entry.status}</span><time>{formatDate(entry.created_at)}</time></div><p>{entry.summary}</p><small>Session {entry.session_id}</small>{entry.status === "pending" && <div className="escalation-actions"><button type="button" className="button primary small" disabled={working} onClick={() => onDecision(entry.id, "accepted")}>Accept case</button><button type="button" className="button secondary small" disabled={working} onClick={() => onDecision(entry.id, "rejected")}>Reject</button></div>}{(entry.status === "accepted" || entry.status === "closed") && <EscalationConversation entry={entry} adminKey={adminKey} onRefresh={onRefresh} />}</article>)}</div>}
+    </section>
+  );
+}
+
+function EscalationConversation({
+  entry,
+  adminKey,
+  onRefresh,
+}: {
+  entry: Escalation;
+  adminKey: string;
+  onRefresh: () => void;
+}) {
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [status, setStatus] = useState(entry.status);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const refreshedStatus = useRef(entry.status);
+
+  const refreshMessages = useCallback(async () => {
+    try {
+      const thread = await api.escalationMessages(adminKey, entry.id);
+      setMessages(thread.messages);
+      setStatus(thread.status);
+      setError("");
+      if (thread.status !== refreshedStatus.current) {
+        refreshedStatus.current = thread.status;
+        onRefresh();
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load this conversation.");
+    } finally {
+      setLoading(false);
+    }
+  }, [adminKey, entry.id, onRefresh]);
+
+  useEffect(() => {
+    void refreshMessages();
+    if (entry.status !== "accepted") return;
+    const timer = window.setInterval(() => void refreshMessages(), 3000);
+    return () => window.clearInterval(timer);
+  }, [entry.status, refreshMessages]);
+
+  const sendReply = async (event: FormEvent) => {
+    event.preventDefault();
+    const content = draft.trim();
+    if (!content || sending || status !== "accepted") return;
+    setSending(true);
+    setError("");
+    try {
+      const saved = await api.replyToEscalation(adminKey, entry.id, content);
+      setMessages((current) => [...current, saved]);
+      setDraft("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not send your reply.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <section className="escalation-conversation" aria-label={`Conversation for case ${entry.id}`}>
+      <div className="conversation-heading">
+        <strong>Customer conversation</strong>
+        <span>{status === "accepted" ? "Live · refreshes automatically" : "Read only · case closed"}</span>
+      </div>
+      <div className="escalation-message-list" aria-live="polite">
+        {loading && !messages.length ? <p className="muted">Loading saved messages…</p> : null}
+        {!loading && !messages.length ? <p className="muted">No saved messages for this conversation.</p> : null}
+        {messages.map((message) => (
+          <article className={`thread-message ${message.sender}`} key={message.id}>
+            <div><strong>{message.sender === "customer" ? entry.customer_id : message.sender === "admin" ? "Support agent" : "TicketBuddy"}</strong><time>{formatDate(message.created_at)}</time></div>
+            <p>{message.content}</p>
+          </article>
+        ))}
+      </div>
+      {error && <div className="error-banner" role="alert">{error}</div>}
+      {status === "accepted" && <form className="agent-reply-form" onSubmit={(event) => void sendReply(event)}>
+        <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={2} maxLength={4000} placeholder="Write a reply to the customer…" aria-label="Reply to customer" />
+        <button className="button primary small" disabled={sending || !draft.trim()}>{sending ? "Sending…" : "Send reply"}</button>
+      </form>}
     </section>
   );
 }

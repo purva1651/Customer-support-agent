@@ -31,6 +31,14 @@ class SessionOwnerStore:
         if row is None or row["customer_id"] != customer_id:
             raise SessionOwnershipError("session does not belong to this customer")
 
+    def verify(self, session_id: str, customer_id: str) -> None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT customer_id FROM session_owners WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        if row is None or row["customer_id"] != customer_id:
+            raise SessionOwnershipError("session does not belong to this customer")
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._path, timeout=10)
         connection.row_factory = sqlite3.Row

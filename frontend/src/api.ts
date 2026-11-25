@@ -11,6 +11,7 @@ export type ChatResult = {
   pending_action: PendingAction | null;
   escalated: boolean;
   escalation_summary: string | null;
+  escalation_status: "pending" | "accepted" | "rejected" | "closed" | null;
 };
 export type KnowledgeSource = {
   title: string;
@@ -36,6 +37,17 @@ export type Escalation = {
   ticket_id: string | null;
   created_at: string;
   status: "pending" | "accepted" | "rejected" | "closed";
+};
+export type ConversationMessage = {
+  id: number;
+  sender: "customer" | "assistant" | "admin";
+  content: string;
+  created_at: string;
+};
+export type ConversationThread = {
+  escalation_id: number;
+  status: "pending" | "accepted" | "rejected" | "closed";
+  messages: ConversationMessage[];
 };
 
 async function request<T>(path: string, init?: RequestInit, adminKey?: string): Promise<T> {
@@ -70,6 +82,10 @@ export const api = {
     message: string;
     language: string;
   }) => request<ChatResult>("/chat", { method: "POST", body: JSON.stringify(payload) }),
+  customerMessages: (customerId: string, sessionId: string) => {
+    const query = new URLSearchParams({ customer_id: customerId, session_id: sessionId });
+    return request<ConversationThread>(`/chat/messages?${query.toString()}`);
+  },
   approve: (action_id: string, approved: boolean) =>
     request<{ reply: string }>("/approve", { method: "POST", body: JSON.stringify({ action_id, approved }) }),
   extractDocument: (customerId: string, file: File, documentType?: string) => {
@@ -117,6 +133,14 @@ export const api = {
     request<{ id: number; status: "accepted" | "rejected" }>(
       `/admin/escalations/${id}/decision`,
       { method: "POST", body: JSON.stringify({ decision }) },
+      key,
+    ),
+  escalationMessages: (key: string, id: number) =>
+    request<ConversationThread>(`/admin/escalations/${id}/messages`, undefined, key),
+  replyToEscalation: (key: string, id: number, content: string) =>
+    request<ConversationMessage>(
+      `/admin/escalations/${id}/messages`,
+      { method: "POST", body: JSON.stringify({ content }) },
       key,
     ),
 };

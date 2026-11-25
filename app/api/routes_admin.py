@@ -11,7 +11,10 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Uplo
 from app.api.dependencies import AppServices, get_services
 from app.ingestion.loaders import load_document
 from app.schemas import (
+    AdminReplyRequest,
     AnalyticsResponse,
+    ConversationMessage,
+    ConversationMessagesResponse,
     EscalationDecisionRequest,
     EscalationDecisionResponse,
     EscalationsResponse,
@@ -193,6 +196,44 @@ def decide_escalation(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return EscalationDecisionResponse(id=escalation_id, status=status)
+
+
+@router.get(
+    "/escalations/{escalation_id}/messages",
+    response_model=ConversationMessagesResponse,
+)
+def escalation_messages(
+    escalation_id: int,
+    services: Services,
+) -> ConversationMessagesResponse:
+    try:
+        status, messages = services.analytics.admin_escalation_messages(escalation_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ConversationMessagesResponse(
+        escalation_id=escalation_id,
+        status=status,
+        messages=messages,
+    )
+
+
+@router.post(
+    "/escalations/{escalation_id}/messages",
+    response_model=ConversationMessage,
+)
+def reply_to_escalation(
+    escalation_id: int,
+    request: AdminReplyRequest,
+    services: Services,
+) -> ConversationMessage:
+    try:
+        return services.analytics.add_admin_reply(escalation_id, request.content.strip())
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _mutation_for_path(services: AppServices, path: Path) -> KnowledgeMutationResponse:
