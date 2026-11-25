@@ -52,3 +52,15 @@ translation:
   enabled: false
   model: ai4bharat/indictrans2-en-indic-dist-200M
   device: auto
+integrations:
+  document_intelligence:
+    enabled: false
+    url: null
+    tool_name: extract_fields
+    file_argument: file_base64
+    filename_argument: filename
+    document_type_argument: document_type
+    api_key_header: Authorization
+    api_key_prefix: "Bearer "
+    timeout_seconds: 60
+    source: Document Intelligence Agent

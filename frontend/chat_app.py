@@ -1,4 +1,7 @@
 import asyncio
+import json
+import mimetypes
+from pathlib import Path
 
 import chainlit as cl
 from chainlit.input_widget import Select, TextInput
@@ -31,7 +34,8 @@ async def on_chat_start() -> None:
         content=(
             f"**TicketBuddy support**  ·  Signed in as `{cl.user_session.get('customer_id')}`"
             f" · {cl.user_session.get('language')}\n\n"
-            "Hi! I can check a booking, explain a ticket policy, or help with a change."
+            "Hi! I can check a booking, explain a ticket policy, help with a change, "
+            "or extract details from an invoice or warranty card you upload."
         )
     ).send()
 
@@ -47,6 +51,58 @@ async def on_settings_update(settings: dict[str, str]) -> None:
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
     api = SupportAPI()
+    uploaded_files = [
+        element
+        for element in (message.elements or [])
+        if getattr(element, "type", "") in {"file", "image"}
+    ]
+    if uploaded_files:
+        results: list[str] = []
+        customer_id = cl.user_session.get("customer_id", "C001")
+        document_type = _document_type_from_message(message.content)
+        try:
+            for element in uploaded_files:
+                filename = Path(getattr(element, "name", "upload")).name
+                content = getattr(element, "content", None)
+                if isinstance(content, str):
+                    content = content.encode("utf-8")
+                if not isinstance(content, bytes):
+                    path = getattr(element, "path", None)
+                    if not path:
+                        results.append(f"I couldn't read **{filename}** from the upload.")
+                        continue
+                    content = await asyncio.to_thread(Path(path).read_bytes)
+                extracted = await asyncio.to_thread(
+                    api.extract_document,
+                    customer_id,
+                    filename,
+                    content,
+                    document_type,
+                    mimetypes.guess_type(filename)[0] or "application/octet-stream",
+                )
+                fields = extracted.get("fields", {})
+                field_lines = []
+                for key, value in fields.items():
+                    display_value = (
+                        value
+                        if isinstance(value, (str, int, float, bool))
+                        else json.dumps(value, ensure_ascii=False)
+                    )
+                    field_lines.append(
+                        f"- **{key.replace('_', ' ').title()}**: {display_value}"
+                    )
+                details = "\n".join(field_lines) if field_lines else "No fields were returned."
+                results.append(
+                    f"**Extracted details from {filename}**\n\n{details}\n\n"
+                    f"Source: {extracted.get('source', 'Document Intelligence Agent')}"
+                )
+        except APIError as exc:
+            results.append(f"I couldn't extract fields from the upload: {exc}")
+        finally:
+            api.close()
+        await cl.Message(content="\n\n---\n\n".join(results)).send()
+        return
+
     try:
         response = await asyncio.to_thread(
             api.chat,
@@ -106,6 +162,15 @@ async def on_message(message: cl.Message) -> None:
             ),
         ]
     await cl.Message(content=content, actions=actions or None).send()
+
+
+def _document_type_from_message(message: str) -> str | None:
+    normalized = message.casefold()
+    if "invoice" in normalized:
+        return "invoice"
+    if "warranty" in normalized:
+        return "warranty_card"
+    return None
 
 
 @cl.action_callback("approve_action")

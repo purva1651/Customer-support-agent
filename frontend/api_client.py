@@ -52,6 +52,24 @@ class SupportAPI:
             },
         )
 
+    def extract_document(
+        self,
+        customer_id: str,
+        filename: str,
+        content: bytes,
+        document_type: str | None = None,
+        content_type: str = "application/octet-stream",
+    ) -> dict[str, Any]:
+        data = {"customer_id": customer_id}
+        if document_type:
+            data["document_type"] = document_type
+        return self._request(
+            "POST",
+            "/documents/extract",
+            data=data,
+            files={"file": (filename, content, content_type)},
+        )
+
     def approve(self, action_id: str, approved: bool) -> dict[str, Any]:
         return self._request(
             "POST", "/approve", json={"action_id": action_id, "approved": approved}

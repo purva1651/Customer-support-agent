@@ -13,6 +13,7 @@ from app.api.analytics import AnalyticsStore
 from app.config import AppConfig, load_runtime_files
 from app.ingestion.chunker import KnowledgeChunker
 from app.ingestion.indexer import KnowledgeIndexer
+from app.integrations.document_intelligence import DocumentIntelligenceClient
 from app.llm.factory import create_chat_model
 from app.retrieval.hybrid_search import HybridSearch
 from app.retrieval.keyword_search import KeywordSearch
@@ -31,6 +32,7 @@ class AppServices:
     analytics: AnalyticsStore
     knowledge_dir: Path
     crm_client: httpx.Client
+    document_client: DocumentIntelligenceClient | None = None
 
     async def close(self) -> None:
         await self.runtime.close()
@@ -91,7 +93,19 @@ async def create_services(config_directory: Path = Path("config")) -> AppService
     )
     runtime = await create_runtime(agent_services, config)
     analytics = AnalyticsStore(config.agent.memory_path.with_name("analytics.sqlite3"))
-    return AppServices(config, runtime, indexer, analytics, knowledge_dir, crm_client)
+    document_client = DocumentIntelligenceClient(
+        config.integrations.document_intelligence,
+        config.secrets.document_intelligence_api_key,
+    )
+    return AppServices(
+        config,
+        runtime,
+        indexer,
+        analytics,
+        knowledge_dir,
+        crm_client,
+        document_client,
+    )
 
 
 def get_services(request: Request) -> AppServices:
