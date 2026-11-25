@@ -1,12 +1,15 @@
+import mimetypes
 import re
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from app.agent.approvals import ExpiredApproval, UnknownApproval, UsedApproval
 from app.agent.memory import SessionOwnershipError
 from app.api.dependencies import AppServices, get_services
+from app.ingestion.source_links import local_source_id
 from app.integrations.document_intelligence import (
     DocumentIntelligenceDisabled,
     DocumentIntelligenceError,
@@ -24,6 +27,25 @@ router = APIRouter()
 Services = Annotated[AppServices, Depends(get_services)]
 _DOCUMENT_EXTENSIONS = {".docx", ".jpeg", ".jpg", ".pdf", ".png"}
 _CUSTOMER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
+
+
+@router.get("/knowledge/source/{source_id}", include_in_schema=True)
+def get_knowledge_source(source_id: str, services: Services) -> FileResponse:
+    root = services.knowledge_dir.resolve()
+    for entry in services.indexer.status():
+        source_path = Path(str(entry["source"])).resolve()
+        if local_source_id(source_path) != source_id:
+            continue
+        if root not in source_path.parents or not source_path.is_file():
+            break
+        media_type = mimetypes.guess_type(source_path.name)[0] or "application/octet-stream"
+        return FileResponse(
+            source_path,
+            media_type=media_type,
+            filename=source_path.name,
+            content_disposition_type="inline",
+        )
+    raise HTTPException(status_code=404, detail="Knowledge source not found")
 
 
 @router.get("/health", response_model=HealthResponse)

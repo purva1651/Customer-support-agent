@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -17,6 +18,7 @@ from app.agent.state import AgentState
 from app.config import AppConfig, IntentDescriptions, PromptTemplates, ToolSettings
 from app.guardrails.injection_rules import PromptInjectionDetector
 from app.guardrails.input_checks import validate_agent_input
+from app.ingestion.source_links import local_source_id
 
 _RISKY_ACTIONS = frozenset({"cancel_booking", "refund_booking", "issue_refund"})
 logger = logging.getLogger(__name__)
@@ -137,12 +139,19 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
         for result in selected:
             metadata = result.document.metadata
             title = str(metadata.get("title", "Policy source"))
-            source = str(metadata.get("source_url", metadata.get("source", "")))
+            source_url = str(metadata.get("source_url", ""))
+            source = str(metadata.get("source", ""))
+            if urlsplit(source_url).scheme in {"http", "https"}:
+                source_reference = source_url
+            elif urlsplit(source).scheme in {"http", "https"}:
+                source_reference = source
+            else:
+                source_reference = f"/knowledge/source/{local_source_id(source)}"
             context_parts.append(
-                f"Source title: {title}\nSource URL: {source}\n"
+                f"Source title: {title}\nSource URL: {source_reference}\n"
                 f"Policy text:\n{result.document.page_content}"
             )
-            sources.append({"title": title, "url": source})
+            sources.append({"title": title, "url": source_reference})
         answer_language = (
             "English"
             if services.config.translation.enabled
