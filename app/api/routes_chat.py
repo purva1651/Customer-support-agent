@@ -27,8 +27,6 @@ router = APIRouter()
 Services = Annotated[AppServices, Depends(get_services)]
 _DOCUMENT_EXTENSIONS = {".docx", ".jpeg", ".jpg", ".pdf", ".png"}
 _CUSTOMER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
-
-
 @router.get("/knowledge/source/{source_id}", include_in_schema=True)
 def get_knowledge_source(source_id: str, services: Services) -> FileResponse:
     root = services.knowledge_dir.resolve()
