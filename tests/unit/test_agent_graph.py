@@ -12,6 +12,7 @@ from app.agent.nodes import AgentServices
 from app.agent.router import ActionSelection, RouterDecision
 from app.agent.runtime import create_runtime
 from app.config import load_runtime_files
+from app.ingestion.source_links import local_source_id
 from app.retrieval.hybrid_search import HybridResult
 from app.schemas import ChatRequest
 
@@ -343,7 +344,9 @@ def test_question_uses_rag_sources_and_low_score_escalates(tmp_path: Path) -> No
             )
             assert response.escalated is False
             assert response.sources[0].title == "Cancellation policy"
-            assert response.sources[0].url.endswith("cancellation_policy.md")
+            assert response.sources[0].url == (
+                f"/knowledge/source/{local_source_id('knowledge_base/cancellation_policy.md')}"
+            )
         finally:
             await runtime.close()
 

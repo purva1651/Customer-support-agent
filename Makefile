@@ -16,7 +16,7 @@ api:
 	uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
 
 chat:
-	chainlit run frontend/chat_app.py --host 0.0.0.0 --port 8002
+	streamlit run frontend/chat_app.py --server.port 8002
 
 admin:
 	streamlit run frontend/admin_app.py

@@ -12,6 +12,7 @@ from app.api.main import create_app
 from app.config import load_runtime_files
 from app.ingestion.chunker import KnowledgeChunker
 from app.ingestion.indexer import KnowledgeIndexer
+from app.ingestion.source_links import local_source_id
 from app.retrieval.keyword_search import KeywordSearch
 from app.schemas import ApprovalResponse, ChatResponse
 
@@ -135,6 +136,23 @@ def test_admin_key_is_required(services: AppServices) -> None:
         assert client.get(
             "/admin/knowledge", headers={"X-Admin-Key": "test-admin-key"}
         ).status_code == 200
+
+
+def test_local_knowledge_source_link_serves_only_indexed_files(services: AppServices) -> None:
+    services.knowledge_dir.mkdir(parents=True, exist_ok=True)
+    source = services.knowledge_dir / "booking_policy.md"
+    source.write_text("# Booking policy\n\nKeep your ticket safe.", encoding="utf-8")
+    services.indexer.sync()
+
+    with TestClient(create_app(services)) as client:
+        response = client.get(f"/knowledge/source/{local_source_id(source)}")
+        missing = client.get(f"/knowledge/source/{'0' * 64}")
+
+    assert response.status_code == 200
+    assert response.text == "# Booking policy\n\nKeep your ticket safe."
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert response.headers["content-disposition"].startswith("inline")
+    assert missing.status_code == 404
 
 
 def test_document_extraction_returns_503_when_not_configured(services: AppServices) -> None:
