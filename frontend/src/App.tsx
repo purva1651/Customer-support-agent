@@ -612,7 +612,15 @@ function AdminPage({ adminKey, tab, setTab }: { adminKey: string; tab: AdminTab;
 
       {tab === "playground" && <PlaygroundPanel />}
       {tab === "analytics" && <AnalyticsPanel analytics={analytics} loading={loading} />}
-      {tab === "escalations" && <EscalationsPanel entries={escalations} loading={loading} />}
+      {tab === "escalations" && <EscalationsPanel
+        entries={escalations}
+        loading={loading}
+        working={working}
+        onDecision={(id, decision) => void withAction(
+          () => api.decideEscalation(adminKey, id, decision),
+          decision === "accepted" ? "Escalation accepted." : "Escalation rejected.",
+        )}
+      />}
       {tab === "redteam" && <RedTeamPanel />}
     </main>
   );
@@ -743,11 +751,21 @@ function AnalyticsPanel({ analytics, loading }: { analytics: Analytics | null; l
   );
 }
 
-function EscalationsPanel({ entries, loading }: { entries: Escalation[]; loading: boolean }) {
+function EscalationsPanel({
+  entries,
+  loading,
+  working,
+  onDecision,
+}: {
+  entries: Escalation[];
+  loading: boolean;
+  working: boolean;
+  onDecision: (id: number, decision: "accepted" | "rejected") => void;
+}) {
   return (
     <section className="admin-section">
-      <h1>Escalations</h1><p className="section-intro">Cases handed to a human support specialist.</p>
-      {!entries.length ? <div className="empty-card">{loading ? "Loading handoffs…" : "There are no escalations yet."}</div> : <div className="escalation-list">{entries.map((entry) => <article className="escalation-card" key={`${entry.session_id}-${entry.created_at}`}><div className="escalation-meta"><span className="escalation-id">{entry.ticket_id || "Support case"}</span><span>{entry.customer_id}</span><time>{formatDate(entry.created_at)}</time></div><p>{entry.summary}</p><small>Session {entry.session_id}</small></article>)}</div>}
+      <h1>Escalations</h1><p className="section-intro">Accept cases you will handle, or reject them. Decisions are saved for the support team.</p>
+      {!entries.length ? <div className="empty-card">{loading ? "Loading handoffs…" : "There are no escalations yet."}</div> : <div className="escalation-list">{entries.map((entry) => <article className="escalation-card" key={entry.id}><div className="escalation-meta"><span className="escalation-id">{entry.ticket_id || "Support case"}</span><span>{entry.customer_id}</span><span className={`escalation-status ${entry.status}`}>{entry.status}</span><time>{formatDate(entry.created_at)}</time></div><p>{entry.summary}</p><small>Session {entry.session_id}</small>{entry.status === "pending" && <div className="escalation-actions"><button type="button" className="button primary small" disabled={working} onClick={() => onDecision(entry.id, "accepted")}>Accept case</button><button type="button" className="button secondary small" disabled={working} onClick={() => onDecision(entry.id, "rejected")}>Reject</button></div>}</article>)}</div>}
     </section>
   );
 }

@@ -252,6 +252,7 @@ top-question, and unresolved-query data.
 | `DELETE` | `/admin/knowledge?title=...` | Remove a policy source |
 | `GET` | `/admin/analytics` | Chat, resolution, and top-question metrics |
 | `GET` | `/admin/escalations` | Human handoff summaries |
+| `POST` | `/admin/escalations/{id}/decision` | Accept or reject a pending human handoff |
 
 All `/admin/*` routes require `X-Admin-Key`. The MCP endpoint uses its separate MCP API key and
 identity headers described above.

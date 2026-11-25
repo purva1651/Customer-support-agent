@@ -150,11 +150,22 @@ class AnalyticsResponse(APIModel):
 
 
 class EscalationRecord(APIModel):
+    id: int
     session_id: str
     customer_id: str
     summary: str
     ticket_id: str | None = None
     created_at: str
+    status: Literal["pending", "accepted", "rejected", "closed"]
+
+
+class EscalationDecisionRequest(APIModel):
+    decision: Literal["accepted", "rejected"]
+
+
+class EscalationDecisionResponse(APIModel):
+    id: int
+    status: Literal["accepted", "rejected"]
 
 
 class EscalationsResponse(APIModel):

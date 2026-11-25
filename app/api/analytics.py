@@ -33,6 +33,15 @@ class AnalyticsStore:
                 );
                 """
             )
+            escalation_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(escalation_events)")
+            }
+            if "status" not in escalation_columns:
+                connection.execute(
+                    "ALTER TABLE escalation_events "
+                    "ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
+                )
 
     def log_chat(
         self,
@@ -104,11 +113,54 @@ class AnalyticsStore:
     def escalations(self, limit: int = 100) -> list[EscalationRecord]:
         with self._connect() as connection:
             rows = connection.execute(
-                """SELECT session_id, customer_id, summary, ticket_id, created_at
+                """SELECT id, session_id, customer_id, summary, ticket_id, created_at, status
                    FROM escalation_events ORDER BY id DESC LIMIT ?""",
                 (limit,),
             ).fetchall()
         return [EscalationRecord.model_validate(dict(row)) for row in rows]
+
+    def decide_escalation(self, escalation_id: int, decision: str) -> str:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT status FROM escalation_events WHERE id = ?", (escalation_id,)
+            ).fetchone()
+            if row is None:
+                raise LookupError("Escalation not found")
+            current_status = str(row["status"])
+            if current_status == decision:
+                return current_status
+            if current_status != "pending":
+                raise ValueError(f"Escalation was already {current_status}")
+            connection.execute(
+                "UPDATE escalation_events SET status = ? WHERE id = ? AND status = 'pending'",
+                (decision, escalation_id),
+            )
+        return decision
+
+    def has_open_escalation(self, customer_id: str, session_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT 1 FROM escalation_events
+                   WHERE customer_id = ? AND session_id = ?
+                     AND status IN ('pending', 'accepted')
+                   ORDER BY id DESC LIMIT 1""",
+                (customer_id, session_id),
+            ).fetchone()
+        return row is not None
+
+    def close_open_escalation(self, customer_id: str, session_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """UPDATE escalation_events SET status = 'closed'
+                   WHERE id = (
+                       SELECT id FROM escalation_events
+                       WHERE customer_id = ? AND session_id = ?
+                         AND status IN ('pending', 'accepted')
+                       ORDER BY id DESC LIMIT 1
+                   )""",
+                (customer_id, session_id),
+            )
+        return cursor.rowcount > 0
 
     def intent_counts(self) -> list[IntentCount]:
         with self._connect() as connection:

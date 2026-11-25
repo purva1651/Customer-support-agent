@@ -29,11 +29,13 @@ export type Analytics = {
   daily_chats: { date: string; chats: number }[];
 };
 export type Escalation = {
+  id: number;
   session_id: string;
   customer_id: string;
   summary: string;
   ticket_id: string | null;
   created_at: string;
+  status: "pending" | "accepted" | "rejected";
 };
 
 async function request<T>(path: string, init?: RequestInit, adminKey?: string): Promise<T> {
@@ -111,6 +113,12 @@ export const api = {
     ),
   analytics: (key: string) => request<Analytics>("/admin/analytics", undefined, key),
   escalations: (key: string) => request<{ escalations: Escalation[] }>("/admin/escalations", undefined, key),
+  decideEscalation: (key: string, id: number, decision: "accepted" | "rejected") =>
+    request<{ id: number; status: "accepted" | "rejected" }>(
+      `/admin/escalations/${id}/decision`,
+      { method: "POST", body: JSON.stringify({ decision }) },
+      key,
+    ),
 };
 
 export function sourceHref(url: string): string {

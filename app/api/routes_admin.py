@@ -12,6 +12,8 @@ from app.api.dependencies import AppServices, get_services
 from app.ingestion.loaders import load_document
 from app.schemas import (
     AnalyticsResponse,
+    EscalationDecisionRequest,
+    EscalationDecisionResponse,
     EscalationsResponse,
     KnowledgeDeleteResponse,
     KnowledgeListResponse,
@@ -173,6 +175,24 @@ def escalations(services: Services) -> EscalationsResponse:
     return EscalationsResponse(
         escalations=services.analytics.escalations(services.config.admin.escalation_list_limit)
     )
+
+
+@router.post(
+    "/escalations/{escalation_id}/decision",
+    response_model=EscalationDecisionResponse,
+)
+def decide_escalation(
+    escalation_id: int,
+    request: EscalationDecisionRequest,
+    services: Services,
+) -> EscalationDecisionResponse:
+    try:
+        status = services.analytics.decide_escalation(escalation_id, request.decision)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return EscalationDecisionResponse(id=escalation_id, status=status)
 
 
 def _mutation_for_path(services: AppServices, path: Path) -> KnowledgeMutationResponse:
