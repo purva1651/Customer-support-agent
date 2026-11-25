@@ -140,6 +140,11 @@ Start each service in its own terminal from the repository root, with the virtua
 active. The API downloads and loads the local embedding and reranker models the first time it
 starts; this can take several minutes and needs disk space.
 
+The React app opens with a role selection screen. Demo customers choose `C001` or `C002` and enter
+the chat; customer passwords are not configured in this demo. Admins enter `ADMIN_API_KEY`, which
+the API validates before opening the admin workspace. Add a real customer authentication provider
+before using customer sign-in with non-demo accounts.
+
 | Terminal | Make command | PowerShell alternative | Address |
 | --- | --- | --- | --- |
 | Mock CRM | `make crm` | `python -m uvicorn mock_crm.main:app --reload --port 9000` | `http://localhost:9000` |

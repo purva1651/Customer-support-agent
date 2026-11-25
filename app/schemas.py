@@ -86,6 +86,19 @@ class KnowledgeUrlRequest(APIModel):
     url: HttpUrl
 
 
+class KnowledgeTextRequest(APIModel):
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=50000)
+
+    @field_validator("title", "content")
+    @classmethod
+    def text_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("text must not be blank")
+        return normalized
+
+
 class KnowledgeMutationResponse(APIModel):
     title: str
     url: str
