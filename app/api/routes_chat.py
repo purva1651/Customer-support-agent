@@ -56,6 +56,40 @@ async def chat(
     request: ChatRequest,
     services: Services,
 ) -> ChatResponse:
+    normalized_message = request.message.strip().casefold()
+    if normalized_message == "close":
+        try:
+            services.runtime.validate_session(request)
+        except SessionOwnershipError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+        if services.analytics.has_open_escalation(request.customer_id, request.session_id):
+            closed = services.analytics.close_open_escalation(
+                request.customer_id, request.session_id
+            )
+            reply = (
+                "Your support case is closed. Send a new message if you need help again."
+                if closed
+                else "Your support case is already closed. Send a new message "
+                "if you need help again."
+            )
+        else:
+            reply = "There is no open human support case in this chat to close."
+        response = await services.runtime.notice(request, reply)
+        try:
+            services.analytics.log_chat(
+                customer_id=request.customer_id,
+                session_id=request.session_id,
+                question=request.message,
+                intent=response.intent,
+                resolved=True,
+                escalated=False,
+                escalation_summary=None,
+                tool_calls=[],
+            )
+        except Exception:
+            pass
+        return response
+
     try:
         response = await services.runtime.chat(request)
     except SessionOwnershipError as exc:

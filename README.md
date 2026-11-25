@@ -243,7 +243,7 @@ top-question, and unresolved-query data.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Agent API health |
-| `POST` | `/chat` | Ask a question or request an action |
+| `POST` | `/chat` | Ask a question or request an action; send `close` to close this chat's open human handoff |
 | `POST` | `/approve` | Approve or decline a pending action |
 | `GET` | `/admin/knowledge` | List indexed sources (admin key required) |
 | `POST` | `/admin/knowledge/upload` | Upload a `.md`, `.pdf`, `.docx`, or `.txt` policy |
@@ -251,7 +251,7 @@ top-question, and unresolved-query data.
 | `POST` | `/admin/knowledge/reindex` | Rebuild the policy index |
 | `DELETE` | `/admin/knowledge?title=...` | Remove a policy source |
 | `GET` | `/admin/analytics` | Chat, resolution, and top-question metrics |
-| `GET` | `/admin/escalations` | Human handoff summaries |
+| `GET` | `/admin/escalations` | Human handoff summaries and status (pending, accepted, rejected, or closed) |
 | `POST` | `/admin/escalations/{id}/decision` | Accept or reject a pending human handoff |
 
 All `/admin/*` routes require `X-Admin-Key`. The MCP endpoint uses its separate MCP API key and

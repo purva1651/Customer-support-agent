@@ -35,7 +35,7 @@ export type Escalation = {
   summary: string;
   ticket_id: string | null;
   created_at: string;
-  status: "pending" | "accepted" | "rejected";
+  status: "pending" | "accepted" | "rejected" | "closed";
 };
 
 async function request<T>(path: string, init?: RequestInit, adminKey?: string): Promise<T> {

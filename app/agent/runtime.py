@@ -57,6 +57,32 @@ class AgentRuntime:
                 "escalation_summary": result.get("escalation_summary"),
             }
         )
+        response = await self.translate_response(response, request)
+        if response.escalated:
+            response = response.model_copy(
+                update={
+                    "reply": (
+                        response.reply.rstrip()
+                        + "\n\nTo close this case, send the exact message `close`. "
+                        "Otherwise, it stays open for the support team."
+                    )
+                }
+            )
+        return response
+
+    def validate_session(self, request: ChatRequest) -> None:
+        """Verify this customer owns the conversation before handling a local command."""
+        self._sessions.bind(request.session_id, request.customer_id)
+
+    async def notice(self, request: ChatRequest, reply: str) -> ChatResponse:
+        self.validate_session(request)
+        return await self.translate_response(
+            ChatResponse(reply=reply, intent="question"), request
+        )
+
+    async def translate_response(
+        self, response: ChatResponse, request: ChatRequest
+    ) -> ChatResponse:
         if self._services.config.translation.enabled and request.language != "English":
             try:
                 from app.translation.indictrans2 import translate_chat_response

@@ -228,6 +228,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .escalation-status { padding: 4px 9px; border-radius: 999px; background: #fff1d6; color: #8b5c14; font-weight: 700; text-transform: capitalize; }
 .escalation-status.accepted { background: #e0f5e9; color: #167044; }
 .escalation-status.rejected { background: #fde8ec; color: #a82a49; }
+.escalation-status.closed { background: #ececf3; color: #60657c; }
 .escalation-card p { color: #424760; line-height: 1.55; font-size: 14px; }
 .escalation-card small { color: #9094aa; }
 .escalation-actions { display: flex; gap: 8px; margin-top: 14px; }
