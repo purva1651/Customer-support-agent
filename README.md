@@ -79,6 +79,34 @@ or `ollama` and provide the matching key or local server. For optional tracing, 
 `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`; `LANGFUSE_HOST` defaults to Langfuse Cloud. Tracing
 stays off when either key is missing or `observability.langfuse_enabled` is false.
 
+### Optional invoice and warranty-card extraction
+
+The API can forward customer documents to a separate Document Intelligence MCP server. That
+service is not included in this repository. Ask its owner for the Streamable HTTP MCP URL and any
+API key, then set these values in `.env`:
+
+```dotenv
+DOCUMENT_INTELLIGENCE_ENABLED=true
+DOCUMENT_INTELLIGENCE_MCP_URL=https://<document-agent-host>/mcp
+DOCUMENT_INTELLIGENCE_API_KEY=<optional-service-key>
+```
+
+The integration calls the `extract_fields` MCP tool with a base64 file, filename, and optional
+document type. Argument names, tool name, authentication header, and timeout can be adjusted under
+`integrations.document_intelligence` in `config/agent.yaml`. Restart the API after changing these
+settings. The customer upload endpoint accepts PDF, DOCX, JPG, JPEG, and PNG files up to the
+configured admin upload limit (10 MB by default). It returns 503 until the external MCP service is
+configured and enabled.
+
+For a local endpoint check, run this in PowerShell with a sample invoice file in the current
+directory:
+
+```powershell
+curl.exe -X POST http://localhost:8000/documents/extract `
+  -F "customer_id=C001" -F "document_type=invoice" `
+  -F "file=@invoice.pdf;type=application/pdf"
+```
+
 ### Optional Hindi and Gujarati translation
 
 IndicTrans2 response translation is opt-in. The official IndicTransToolkit currently documents

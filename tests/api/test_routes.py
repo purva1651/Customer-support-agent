@@ -137,6 +137,61 @@ def test_admin_key_is_required(services: AppServices) -> None:
         ).status_code == 200
 
 
+def test_document_extraction_returns_503_when_not_configured(services: AppServices) -> None:
+    with TestClient(create_app(services)) as client:
+        response = client.post(
+            "/documents/extract",
+            data={"customer_id": "C001", "document_type": "invoice"},
+            files={"file": ("invoice.pdf", b"sample", "application/pdf")},
+        )
+
+    assert response.status_code == 503
+
+
+def test_document_extraction_forwards_file_and_returns_fields(services: AppServices) -> None:
+    class FakeDocumentClient:
+        enabled = True
+
+        async def extract_fields(
+            self, filename: str, content: bytes, document_type: str | None
+        ) -> dict[str, str]:
+            assert filename == "invoice.pdf"
+            assert content == b"sample invoice"
+            assert document_type == "invoice"
+            return {"invoice_number": "INV-123", "total": "₹500"}
+
+    services.document_client = FakeDocumentClient()  # type: ignore[assignment]
+    with TestClient(create_app(services)) as client:
+        response = client.post(
+            "/documents/extract",
+            data={"customer_id": "C001", "document_type": "invoice"},
+            files={"file": ("invoice.pdf", b"sample invoice", "application/pdf")},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "filename": "invoice.pdf",
+        "document_type": "invoice",
+        "fields": {"invoice_number": "INV-123", "total": "₹500"},
+        "source": "Document Intelligence Agent",
+    }
+
+
+def test_document_extraction_rejects_unsupported_file(services: AppServices) -> None:
+    class FakeDocumentClient:
+        enabled = True
+
+    services.document_client = FakeDocumentClient()  # type: ignore[assignment]
+    with TestClient(create_app(services)) as client:
+        response = client.post(
+            "/documents/extract",
+            data={"customer_id": "C001"},
+            files={"file": ("script.exe", b"not a document", "application/octet-stream")},
+        )
+
+    assert response.status_code == 422
+
+
 def test_admin_knowledge_upload_reindex_and_delete(services: AppServices) -> None:
     headers = {"X-Admin-Key": "test-admin-key"}
     with TestClient(create_app(services)) as client:

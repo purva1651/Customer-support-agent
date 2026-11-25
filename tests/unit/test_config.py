@@ -16,7 +16,8 @@ def test_environment_overrides_yaml_and_env_file(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(
         "LLM_MODEL=from-file\nXAI_API_KEY=file-key\nGROQ_API_KEY=groq-file-key\n"
-        "HF_TOKEN=hf-test\n",
+        "HF_TOKEN=hf-test\nDOCUMENT_INTELLIGENCE_MCP_URL=http://doc-agent:8001/mcp\n"
+        "DOCUMENT_INTELLIGENCE_ENABLED=true\nDOCUMENT_INTELLIGENCE_API_KEY=doc-key\n",
         encoding="utf-8",
     )
 
@@ -33,6 +34,9 @@ def test_environment_overrides_yaml_and_env_file(tmp_path: Path) -> None:
     assert config.secrets.groq_api_key == "groq-file-key"
     assert config.secrets.groq_base_url == "https://api.groq.com/openai/v1"
     assert config.secrets.hf_token == "hf-test"
+    assert config.integrations.document_intelligence.enabled is True
+    assert config.integrations.document_intelligence.url == "http://doc-agent:8001/mcp"
+    assert config.secrets.document_intelligence_api_key == "doc-key"
     assert config.crm.url == "http://localhost:9000"
 
 
@@ -49,6 +53,7 @@ def test_optional_translation_and_sentiment_defaults_are_safe() -> None:
     )
 
     assert config.translation.enabled is False
+    assert config.integrations.document_intelligence.enabled is False
     assert config.agent.sentiment_escalation_threshold == 0.75
 
 

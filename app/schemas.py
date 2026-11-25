@@ -59,6 +59,13 @@ class ApprovalResponse(APIModel):
     reply: str
 
 
+class DocumentExtractionResponse(APIModel):
+    filename: str = Field(min_length=1)
+    document_type: str | None = None
+    fields: dict[str, object]
+    source: str = Field(min_length=1)
+
+
 class HealthResponse(APIModel):
     status: Literal["ok"] = "ok"
 

@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypeVar
+from urllib.parse import urlsplit
 
 import yaml
 from dotenv import dotenv_values
@@ -94,6 +95,35 @@ class TranslationConfig(StrictConfig):
     device: Literal["auto", "cpu", "cuda"] = "auto"
 
 
+class DocumentIntelligenceConfig(StrictConfig):
+    enabled: bool = False
+    url: str | None = None
+    tool_name: str = "extract_fields"
+    file_argument: str = "file_base64"
+    filename_argument: str = "filename"
+    document_type_argument: str | None = "document_type"
+    api_key_header: str = "Authorization"
+    api_key_prefix: str = "Bearer "
+    timeout_seconds: float = Field(default=60, gt=0)
+    source: str = "Document Intelligence Agent"
+
+    @field_validator("url")
+    @classmethod
+    def url_must_be_http(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Document Intelligence MCP URL must be an HTTP(S) URL")
+        return value
+
+
+class IntegrationsConfig(StrictConfig):
+    document_intelligence: DocumentIntelligenceConfig = Field(
+        default_factory=DocumentIntelligenceConfig
+    )
+
+
 class SecretsConfig(StrictConfig):
     xai_api_key: str | None = None
     xai_base_url: str = "https://api.x.ai/v1"
@@ -107,6 +137,7 @@ class SecretsConfig(StrictConfig):
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
+    document_intelligence_api_key: str | None = None
     hf_token: str | None = None
 
 
@@ -150,6 +181,7 @@ class AppConfig(StrictConfig):
     crm: CRMConfig
     observability: ObservabilityConfig
     translation: TranslationConfig = Field(default_factory=TranslationConfig)
+    integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
     guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)
     admin: AdminConfig = Field(default_factory=AdminConfig)
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
@@ -169,8 +201,12 @@ def _overlay_environment(
     llm = data.setdefault("llm", {})
     crm = data.setdefault("crm", {})
     secrets = data.setdefault("secrets", {})
-    if not all(isinstance(section, dict) for section in (llm, crm, secrets)):
-        raise ValueError("llm, crm, and secrets settings must be YAML mappings")
+    integrations = data.setdefault("integrations", {})
+    if not all(isinstance(section, dict) for section in (llm, crm, secrets, integrations)):
+        raise ValueError("llm, crm, secrets, and integrations settings must be YAML mappings")
+    document_intelligence = integrations.setdefault("document_intelligence", {})
+    if not isinstance(document_intelligence, dict):
+        raise ValueError("integrations.document_intelligence must be a YAML mapping")
 
     overrides = {
         "LLM_PROVIDER": (llm, "provider"),
@@ -188,12 +224,24 @@ def _overlay_environment(
         "LANGFUSE_PUBLIC_KEY": (secrets, "langfuse_public_key"),
         "LANGFUSE_SECRET_KEY": (secrets, "langfuse_secret_key"),
         "LANGFUSE_HOST": (secrets, "langfuse_host"),
+        "DOCUMENT_INTELLIGENCE_API_KEY": (secrets, "document_intelligence_api_key"),
         "HF_TOKEN": (secrets, "hf_token"),
     }
     for environment_key, (section, config_key) in overrides.items():
         value = environment.get(environment_key)
         if value:
             section[config_key] = value
+    document_intelligence_url = environment.get("DOCUMENT_INTELLIGENCE_MCP_URL")
+    if document_intelligence_url:
+        document_intelligence["url"] = document_intelligence_url
+    document_intelligence_enabled = environment.get("DOCUMENT_INTELLIGENCE_ENABLED")
+    if document_intelligence_enabled is not None:
+        document_intelligence["enabled"] = document_intelligence_enabled.casefold() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
 
 def load_config(
