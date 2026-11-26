@@ -164,7 +164,7 @@ def test_local_knowledge_source_link_serves_only_indexed_files(services: AppServ
         missing = client.get(f"/knowledge/source/{'0' * 64}")
 
     assert response.status_code == 200
-    assert response.text == "# Booking policy\n\nKeep your ticket safe."
+    assert response.content == source.read_bytes()
     assert response.headers["content-type"].startswith("text/markdown")
     assert response.headers["content-disposition"].startswith("inline")
     assert missing.status_code == 404
