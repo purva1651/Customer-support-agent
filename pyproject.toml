@@ -18,6 +18,9 @@ dependencies = [
   "tiktoken>=0.7,<1",
   "pyyaml>=6,<7",
   "httpx>=0.27,<1",
+  "Pillow>=10,<13",
+  "PyMuPDF>=1.24,<2",
+  "pytesseract>=0.3.13,<1",
   "python-multipart>=0.0.9,<1",
   "langchain>=0.2,<2",
   "langchain-core>=0.2,<2",
@@ -33,7 +36,7 @@ dependencies = [
   "sentence-transformers>=3,<6",
   "transformers>=4.40,<6",
   "rank-bm25>=0.2,<1",
-  "mcp[cli]>=1,<2",
+  "mcp[cli]>=1.30,<2",
   "langfuse>=3,<4",
 ]
 
@@ -41,7 +44,7 @@ dependencies = [
 dev = ["pytest>=8,<9", "pytest-cov>=5,<7", "ruff>=0.5,<1"]
 translation = [
   "torch>=2.5",
-  "transformers>=4.51,<6",
+  "transformers>=4.51,<5",
   "indictranstoolkit>=1.1.1,<2",
 ]
 [tool.setuptools.packages.find]

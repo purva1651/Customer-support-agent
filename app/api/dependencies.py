@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Request
@@ -93,9 +94,22 @@ async def create_services(config_directory: Path = Path("config")) -> AppService
     )
     runtime = await create_runtime(agent_services, config)
     analytics = AnalyticsStore(config.agent.memory_path.with_name("analytics.sqlite3"))
+    document_url = config.integrations.document_intelligence.url
+    document_url_parts = urlsplit(document_url) if document_url else None
+    is_local_mcp = (
+        document_url_parts is not None
+        and document_url_parts.hostname in {"localhost", "127.0.0.1", "::1"}
+        and document_url_parts.port == config.mcp.port
+        and document_url_parts.path == config.mcp.path
+    )
+    document_api_key = (
+        config.secrets.mcp_api_key
+        if is_local_mcp
+        else config.secrets.document_intelligence_api_key or config.secrets.mcp_api_key
+    )
     document_client = DocumentIntelligenceClient(
         config.integrations.document_intelligence,
-        config.secrets.document_intelligence_api_key,
+        document_api_key,
     )
     return AppServices(
         config,

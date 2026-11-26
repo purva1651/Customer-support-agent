@@ -223,11 +223,22 @@ async def extract_document(
     except DocumentIntelligenceError as exc:
         raise HTTPException(
             status_code=502,
-            detail="The Document Intelligence service could not extract this document",
+            detail=(
+                "Document extraction failed. Check the MCP server terminal for the "
+                "underlying error, then retry."
+            ),
         ) from exc
+    extracted_document_type = normalized_document_type
+    extracted_fields = fields
+    nested_fields = fields.get("fields")
+    if isinstance(nested_fields, dict):
+        extracted_fields = nested_fields
+        detected_type = fields.get("document_type")
+        if isinstance(detected_type, str):
+            extracted_document_type = detected_type
     return DocumentExtractionResponse(
         filename=filename,
-        document_type=normalized_document_type,
-        fields=fields,
+        document_type=extracted_document_type,
+        fields=extracted_fields,
         source=services.config.integrations.document_intelligence.source,
     )

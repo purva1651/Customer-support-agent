@@ -24,13 +24,26 @@ def test_mcp_server_exposes_only_expected_tools_and_hides_identity() -> None:
 
     tools = asyncio.run(inspect_tools())
 
-    assert set(tools) == {"answer_question", "create_ticket", "get_order_status"}
-    for tool in tools.values():
+    assert set(tools) == {
+        "answer_question",
+        "create_ticket",
+        "get_order_status",
+        "extract_fields",
+    }
+    for tool_name in {"answer_question", "create_ticket", "get_order_status"}:
+        tool = tools[tool_name]
         assert "X-API-Key" in tool.description
         assert "X-Customer-ID" in tool.description
         assert "X-Session-ID" in tool.description
         assert "customer_id" not in tool.inputSchema["properties"]
         assert "session_id" not in tool.inputSchema["properties"]
+
+    assert "X-API-Key" in tools["extract_fields"].description
+    assert set(tools["extract_fields"].inputSchema["properties"]) == {
+        "file_base64",
+        "filename",
+        "document_type",
+    }
 
 
 def test_request_identity_authenticates_and_reads_headers_only() -> None:

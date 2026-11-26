@@ -1,3 +1,5 @@
+import asyncio
+import base64
 import hmac
 import json
 from collections.abc import AsyncIterator, Mapping
@@ -10,6 +12,7 @@ from starlette.responses import JSONResponse
 
 from app.api.dependencies import AppServices, create_services
 from app.config import AppConfig, load_runtime_files
+from app.document_intelligence.extractor import extract_fields
 from app.schemas import ChatRequest
 from app.tools.bookings import booking_status_tool
 from app.tools.tickets import create_ticket_tool
@@ -70,15 +73,23 @@ def request_identity(
     headers = getattr(request_object, "headers", None)
     if headers is None:
         raise PermissionError("MCP calls must include the configured authentication headers")
-    api_key = headers.get(config.mcp.api_key_header)
-    required_key = expected_api_key or config.secrets.mcp_api_key
-    if not required_key or not api_key or not hmac.compare_digest(required_key, api_key):
-        raise PermissionError("MCP API key is invalid")
+    _verify_mcp_api_key(headers, config, expected_api_key)
     customer_id = headers.get(config.mcp.customer_id_header)
     session_id = headers.get(config.mcp.session_id_header)
     if not customer_id or not session_id:
         raise PermissionError("MCP customer and session headers are required")
     return MCPIdentity(customer_id=customer_id, session_id=session_id)
+
+
+def _verify_mcp_api_key(
+    headers: Mapping[str, str],
+    config: AppConfig,
+    expected_api_key: str | None = None,
+) -> None:
+    api_key = headers.get(config.mcp.api_key_header)
+    required_key = expected_api_key or config.secrets.mcp_api_key
+    if not required_key or not api_key or not hmac.compare_digest(required_key, api_key):
+        raise PermissionError("MCP API key is invalid")
 
 
 def create_mcp_server(
@@ -183,6 +194,45 @@ def create_mcp_server(
         service = active_services(ctx)
         identity = request_identity(ctx.request_context, service.config, api_key)
         return await get_order_status(service, identity, booking_id)
+
+    @server.tool(
+        name="extract_fields",
+        description=(
+            "Extract visible fields from a customer invoice or warranty card. Inputs: "
+            "file_base64 (base64 file bytes), filename, and optional document_type "
+            "(invoice or warranty_card). Output: document_type and fields. Do not infer "
+            "values not present in the document. Requires X-API-Key authentication."
+        ),
+    )
+    async def extract_fields_tool(
+        file_base64: str,
+        filename: str,
+        ctx: Context,
+        document_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Read a supported upload and use the configured LLM to structure its fields."""
+        service = active_services(ctx)
+        request = getattr(ctx.request_context, "request", None)
+        headers = getattr(request, "headers", None)
+        if headers is None:
+            raise PermissionError("MCP calls must include the configured authentication headers")
+        _verify_mcp_api_key(headers, service.config, api_key)
+        maximum_encoded_bytes = 4 * ((service.config.admin.max_upload_bytes + 2) // 3)
+        if len(file_base64) > maximum_encoded_bytes:
+            raise ValueError("The encoded file exceeds the configured upload size limit")
+        try:
+            content = base64.b64decode(file_base64, validate=True)
+        except ValueError as exc:
+            raise ValueError("file_base64 must contain valid base64 data") from exc
+        if not content or len(content) > service.config.admin.max_upload_bytes:
+            raise ValueError("The file is empty or exceeds the configured upload size limit")
+        return await asyncio.to_thread(
+            extract_fields,
+            service.config,
+            filename,
+            content,
+            document_type,
+        )
 
     return server
 

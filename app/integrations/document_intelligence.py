@@ -1,13 +1,17 @@
 import asyncio
 import base64
 import json
+import logging
 from datetime import timedelta
 from typing import Any
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from app.config import DocumentIntelligenceConfig
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentIntelligenceDisabled(RuntimeError):
@@ -59,8 +63,10 @@ class DocumentIntelligenceClient:
                 timeout=self._config.timeout_seconds,
             )
         except DocumentIntelligenceError:
+            logger.exception("Document Intelligence MCP tool returned an error")
             raise
         except Exception as exc:
+            logger.exception("Document Intelligence MCP request failed")
             raise DocumentIntelligenceError(
                 "The Document Intelligence MCP service could not complete the request"
             ) from exc
@@ -72,19 +78,18 @@ class DocumentIntelligenceClient:
     ) -> dict[str, Any]:
         assert self._config.url is not None
         timeout = self._config.timeout_seconds
-        async with streamable_http_client(
-            self._config.url,
-            headers=headers,
-            timeout=timeout,
-            sse_read_timeout=timeout,
-        ) as (read_stream, write_stream, _get_session_id):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                result = await session.call_tool(
-                    self._config.tool_name,
-                    arguments,
-                    read_timeout_seconds=timedelta(seconds=timeout),
-                )
+        async with httpx.AsyncClient(headers=headers, timeout=timeout) as http_client:
+            async with streamable_http_client(
+                self._config.url,
+                http_client=http_client,
+            ) as (read_stream, write_stream, _get_session_id):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    result = await session.call_tool(
+                        self._config.tool_name,
+                        arguments,
+                        read_timeout_seconds=timedelta(seconds=timeout),
+                    )
 
         if result.isError:
             raise DocumentIntelligenceError("The remote extraction tool returned an error")

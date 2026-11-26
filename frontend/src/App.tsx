@@ -85,7 +85,23 @@ function App() {
   useEffect(() => localStorage.setItem("ticketbuddy-customer", customerId), [customerId]);
   useEffect(() => localStorage.setItem("ticketbuddy-language", language), [language]);
   useEffect(() => {
-    api.health().then(() => setOnline(true)).catch(() => setOnline(false));
+    let cancelled = false;
+    const checkHealth = async () => {
+      try {
+        await api.health();
+        if (!cancelled) setOnline(true);
+      } catch {
+        if (!cancelled) setOnline(false);
+      }
+    };
+    void checkHealth();
+    const timer = window.setInterval(() => void checkHealth(), 10_000);
+    window.addEventListener("focus", checkHealth);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", checkHealth);
+    };
   }, []);
 
   const customerLogin = (id: string, replyLanguage: string) => {
@@ -157,6 +173,7 @@ function App() {
                 setCustomerId={setCustomerId}
                 setLanguage={setLanguage}
                 setMessages={setMessages}
+                setOnline={setOnline}
               />
             ) : <AdminPage adminKey={adminKey} tab={adminTab} setTab={setAdminTab} />}
           </div>
@@ -264,6 +281,7 @@ type ChatPageProps = {
   setCustomerId: (value: string) => void;
   setLanguage: (value: string) => void;
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  setOnline: (value: boolean) => void;
 };
 
 function ChatPage(props: ChatPageProps) {
@@ -399,6 +417,7 @@ function ChatPage(props: ChatPageProps) {
         message,
         language: props.language,
       });
+      props.setOnline(true);
       if (result.escalation_status) setEscalationStatus(result.escalation_status);
       const content = result.escalated ? `🚩 **Escalated to a support specialist**\n\n${result.reply}` : result.reply;
       props.setMessages((current) => [...current, {
@@ -432,6 +451,7 @@ function ChatPage(props: ChatPageProps) {
     try {
       const documentType = /invoice/i.test(file.name) ? "invoice" : /warranty/i.test(file.name) ? "warranty_card" : undefined;
       const extracted = await api.extractDocument(props.customerId, file, documentType);
+      props.setOnline(true);
       const details = Object.entries(extracted.fields).map(([key, value]) => `**${key.replaceAll("_", " ")}:** ${typeof value === "string" ? value : JSON.stringify(value)}`).join("\n\n");
       props.setMessages((current) => [...current, {
         id: makeId(), role: "assistant",

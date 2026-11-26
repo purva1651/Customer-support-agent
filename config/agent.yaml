@@ -54,13 +54,13 @@ translation:
   device: auto
 integrations:
   document_intelligence:
-    enabled: false
-    url: null
+    enabled: true
+    url: http://localhost:8001/mcp
     tool_name: extract_fields
     file_argument: file_base64
     filename_argument: filename
     document_type_argument: document_type
-    api_key_header: Authorization
-    api_key_prefix: "Bearer "
+    api_key_header: X-API-Key
+    api_key_prefix: ""
     timeout_seconds: 60
     source: Document Intelligence Agent
