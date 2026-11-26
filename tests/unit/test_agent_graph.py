@@ -63,9 +63,13 @@ class _FakeLLM:
         self.sentiment_confidence = sentiment_confidence
         self.structured_calls: list[type[Any]] = []
         self.structured_messages: list[str] = []
+        self.structured_output_options: list[dict[str, Any]] = []
         self.messages: list[str] = []
 
-    def with_structured_output(self, schema: type[Any]) -> _StructuredLLM:
+    def with_structured_output(
+        self, schema: type[Any], **options: Any
+    ) -> _StructuredLLM:
+        self.structured_output_options.append(options)
         return _StructuredLLM(self, schema)
 
     def invoke(self, messages: list[Any]) -> AIMessage:
@@ -114,10 +118,14 @@ async def _make_runtime(
 
     def tools_for_customer(customer_id: str) -> dict[str, Any]:
         @tool("cancel_booking")
-        def cancel_booking(booking_id: str) -> dict[str, str]:
+        def cancel_booking(booking_id: str) -> dict[str, Any]:
             """Cancel a booking after approval."""
             cancellation_calls.append((customer_id, booking_id))
-            return {"booking_id": booking_id, "status": "cancelled"}
+            return {
+                "booking": {"id": booking_id, "status": "cancelled"},
+                "fee": 120.0,
+                "refund_amount": 1080.0,
+            }
 
         @tool("create_ticket")
         def create_ticket(subject: str, details: str) -> dict[str, str]:
