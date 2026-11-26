@@ -5,6 +5,18 @@ from a local knowledge base, checks and changes bookings through a mock CRM, ask
 before cancellation, remembers each customer session, and escalates uncertain or unhappy cases.
 It provides a REST API, an MCP server, and a React + Vite customer chat and admin interface.
 
+## What the demo supports
+
+- Answer policy questions with citations that open local indexed documents or public source URLs.
+- Look up bookings and cancel them only after customer approval.
+- Save refund requests as pending CRM records. A request does not issue or approve a payment.
+- Update a customer's email, phone number, or address, and create support tickets.
+- Upload invoices or warranty cards and extract labeled fields through the local MCP service.
+- Manage policy documents, analytics, escalations, and red-team examples from the admin panel.
+
+Customer IDs and booking records are seeded demo data. The project is not a production booking,
+payment, or authentication service.
+
 ## Architecture
 
 ```mermaid
@@ -29,6 +41,11 @@ The REST and MCP interfaces are adapters. Customer identity is injected by the b
 CRM tools; the language model does not provide a customer ID. Cancellation requires a one-time,
 customer-bound approval through `POST /approve`. Admin endpoints require `X-Admin-Key`.
 
+Project design documents:
+
+- [Product specification](docs/spec.md)
+- [Low-level design](docs/LLD.md)
+
 ## Requirements
 
 - Python 3.11 or newer
@@ -36,8 +53,7 @@ customer-bound approval through `POST /approve`. Admin endpoints require `X-Admi
 - Git
 - Internet access for package installation, the configured chat model, and first-time local
   embedding/reranker downloads
-- GNU Make to use the `make` commands. On Windows, use Git Bash or WSL, or use the direct
-  PowerShell commands below.
+- GNU Make is optional. The direct PowerShell and Python commands below work on Windows.
 
 ## Setup (PowerShell)
 
@@ -86,8 +102,9 @@ stays off when either key is missing or `observability.langfuse_enabled` is fals
 ### Invoice and warranty-card extraction
 
 The project includes an `extract_fields` MCP tool on its local MCP server. The customer upload flow
-reads PDF and DOCX text locally, and uses Tesseract OCR for image uploads and scanned PDFs. The
-configured chat model then structures the extracted text into invoice or warranty fields. This
+reads PDF and DOCX text locally, and uses Tesseract OCR for image uploads and scanned PDFs. It
+first parses recognizable field labels locally. If it cannot find enough fields, it sends the
+extracted text—not the original file—to the configured chat model for structured extraction. This
 uses the existing `MCP_API_KEY` and LLM provider settings; no separate Document Intelligence server
 is needed.
 
@@ -200,46 +217,60 @@ Invoke-RestMethod http://localhost:8000/admin/knowledge `
 
 ## MCP tools
 
-The Streamable HTTP MCP endpoint is `http://localhost:8001/mcp`. It exposes exactly:
+The Streamable HTTP MCP endpoint is `http://localhost:8001/mcp`. It exposes:
 
 - `answer_question(message, language?)`
 - `create_ticket(subject, details)`
 - `get_order_status(booking_id)`
+- `extract_fields(file_base64, filename, document_type?)`
 
-Send `X-API-Key`, `X-Customer-ID`, and `X-Session-ID` headers with MCP requests. Customer and
-session identity are never tool arguments. The key is the `MCP_API_KEY` value in `.env`. Through
-`answer_question`, customers can also submit a refund request for review or update their contact
-email, phone number, or address. A refund request only creates a pending CRM review item; it does
-not issue or approve a payment.
+All tools require `X-API-Key`. The customer tools `answer_question`, `create_ticket`, and
+`get_order_status` also require `X-Customer-ID` and `X-Session-ID`; identity is never passed as a
+tool argument. The key is the `MCP_API_KEY` value in `.env`. Through `answer_question`, customers can
+also submit a refund request or update their contact email, phone number, or address. A refund
+request is saved as a pending CRM record; it does not issue or approve a payment. Refund records
+are not currently shown in a dedicated admin review panel.
 
 ## Checks and evaluations
 
-```powershell
-make lint
-make test
-```
+### Run checks on Windows
 
-These run Ruff and the CI-safe test suite, excluding live-model evaluations. The test command
-also reports `app/` coverage and fails below 70%. Retrieval source checks use the local policy
-files and do not need an API key.
-
-To evaluate the full hybrid retrieval stack against the 30 policy questions, run
-`make eval-retrieval`. This loads the configured embedding and reranker models locally and may
-download them on first use. The evaluation checks whether each expected policy source appears in
-the hybrid top five; it does not require a live chat model or API key.
-
-For live router and action-tool evaluations, configure `LLM_PROVIDER`, `LLM_MODEL`, and the
-provider key, then run:
+From the repository root with `.venv` activated:
 
 ```powershell
-make eval
-make eval-retrieval
+ruff check .
+python -m pytest --basetemp=.pytest_tmp -m "not eval" --cov=app --cov-report=term --cov-fail-under=70
 ```
 
-`make eval` sends the 25 prompts in `tests/evals/cases.yaml` to the configured model. Results can
-vary by model and provider settings; it is separate from `make test` and may incur provider charges.
-`make eval-retrieval` checks the 30 policy questions against the production hybrid retriever.
-Retrieval model downloads may be needed on first use.
+These run Ruff and the CI-safe test suite; they exclude live-model evaluations. The test command
+reports coverage for `app/` and requires at least 70%. The first run may install or download local
+embedding and reranker models depending on what is already cached.
+
+To check the complete hybrid search and reranking pipeline against 30 policy questions, run:
+
+```powershell
+python -m pytest --basetemp=.pytest_tmp -m eval tests/evals/test_hybrid_retrieval.py -q
+```
+
+This evaluation uses the local embedding, vector search, and reranker models. It does not need an
+LLM API key, but may download retrieval models the first time.
+
+For the live router and action-selection evaluation, set `LLM_PROVIDER`, `LLM_MODEL`, and the
+matching provider key in `.env`, then run:
+
+```powershell
+python -m pytest --basetemp=.pytest_tmp -m eval tests/evals/test_live_evals.py -q
+```
+
+It sends the 25 prompts in `tests/evals/cases.yaml` to the configured model. Results may vary by
+model and provider, and the run may use paid API credits. The current cases do not yet evaluate
+refund requests or address changes.
+
+These commands print test results; they do not create a separate evaluation report file. A RAGAS
+faithfulness/relevance report is not included.
+
+GNU Make aliases are also available: `make lint`, `make test`, `make eval`, and
+`make eval-retrieval`.
 
 The sentiment escalation threshold is configurable as `agent.sentiment_escalation_threshold`
 in `config/agent.yaml`. The router escalates clearly negative sentiment only when its confidence
@@ -254,6 +285,8 @@ top-question, and unresolved-query data.
 | `GET` | `/health` | Agent API health |
 | `POST` | `/chat` | Ask a question or request an action; send `close` to close this chat's open human handoff |
 | `POST` | `/approve` | Approve or decline a pending action |
+| `GET` | `/knowledge/source/{source_id}` | Open an indexed local knowledge file cited by the assistant |
+| `POST` | `/documents/extract` | Extract fields from an uploaded invoice or warranty card |
 | `GET` | `/admin/knowledge` | List indexed sources (admin key required) |
 | `POST` | `/admin/knowledge/upload` | Upload a `.md`, `.pdf`, `.docx`, or `.txt` policy |
 | `POST` | `/admin/knowledge/url` | Load a public HTTP(S) policy URL |
@@ -281,8 +314,11 @@ available to admins for review.
 - The CRM is seeded SQLite data. It does not connect to a ticket vendor, payment system, or live
   booking provider.
 - The mock CRM supports booking lookup, cancellation with its configured fee and refund amount,
-  pending refund requests for human review, support-ticket creation, and email, phone, or address
-  updates. A refund request does not issue or approve a payment.
+  pending refund-request records, support-ticket creation, and email, phone, or address updates.
+  Refund records are not currently shown in a dedicated admin review panel, and a request does not
+  issue or approve a payment.
+- The project is focused on booking and ticket support. General IT/HR helpdesk workflows, WhatsApp
+  or website widgets, voice input/output, and automatic FAQ generation are not implemented.
 - Answers are limited to retrieved policy content. If retrieval is weak or a policy is missing,
   the agent says it is unsure and escalates instead of inventing a refund rule.
 - The BGE embedding and reranker models run locally. First startup requires a model download;
