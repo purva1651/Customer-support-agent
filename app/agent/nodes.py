@@ -87,6 +87,13 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
             }
         if state.get("injection_detected", False):
             return {"intent": "complaint", "negative_sentiment": False, "steps": steps + 1}
+        if _has_explicit_refund_request(state["message"]):
+            return {
+                "intent": "action",
+                "negative_sentiment": False,
+                "sentiment_confidence": 0.0,
+                "steps": steps + 1,
+            }
         try:
             decision = await asyncio.to_thread(
                 router.classify, state["message"], state.get("history", [])
@@ -194,24 +201,26 @@ def create_nodes(services: AgentServices) -> dict[str, Callable[..., Any]]:
                 "reply": "I could not safely complete that action within the support limits.",
             }
         tools = services.tools_for_customer(state["customer_id"])
-        try:
-            selection = await asyncio.to_thread(
-                action_selector.select, state["message"], tools
-            )
-        except Exception:
-            selection = _fallback_booking_selection(state["message"], tools)
-            if selection is None:
-                logger.exception("Action selection failed; escalating request for human review")
-                return {
-                    "steps": steps + 1,
-                    "escalation_reason": "The requested action could not be selected safely.",
-                    "reply": "I couldn't safely determine which support action to take.",
-                    "attempted": "The model could not select a support action safely.",
-                }
-            logger.warning(
-                "Model action selection failed; using a deterministic booking action fallback",
-                exc_info=True,
-            )
+        selection = _fallback_refund_request_selection(state["message"], tools)
+        if selection is None:
+            try:
+                selection = await asyncio.to_thread(
+                    action_selector.select, state["message"], tools
+                )
+            except Exception:
+                selection = _fallback_booking_selection(state["message"], tools)
+                if selection is None:
+                    logger.exception("Action selection failed; escalating request for human review")
+                    return {
+                        "steps": steps + 1,
+                        "escalation_reason": "The requested action could not be selected safely.",
+                        "reply": "I couldn't safely determine which support action to take.",
+                        "attempted": "The model could not select a support action safely.",
+                    }
+                logger.warning(
+                    "Model action selection failed; using a deterministic booking action fallback",
+                    exc_info=True,
+                )
 
         name = selection.tool_name
         setting = services.tool_settings.tools.get(name)
@@ -428,6 +437,37 @@ def _fallback_booking_selection(
     return None
 
 
+def _has_explicit_refund_request(message: str) -> bool:
+    if not re.search(r"\bB\d+\b", message, flags=re.IGNORECASE):
+        return False
+    if not re.search(r"\brefund\b", message, flags=re.IGNORECASE):
+        return False
+    return bool(
+        re.search(
+            r"\b(request|submit|file|raise|open|make|ask|want|need)\b|"
+            r"\bplease\s+refund\b",
+            message,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _fallback_refund_request_selection(
+    message: str, tools: Mapping[str, Any]
+) -> ActionSelection | None:
+    if "request_refund" not in tools or not _has_explicit_refund_request(message):
+        return None
+    booking_match = re.search(r"\b(B\d+)\b", message, flags=re.IGNORECASE)
+    if booking_match is None:
+        return None
+    reason_match = re.search(r"\b(?:because|reason is|since)\b\s*(.+)$", message, re.I)
+    reason = reason_match.group(1).strip() if reason_match else message.strip()
+    return ActionSelection(
+        tool_name="request_refund",
+        arguments={"booking_id": booking_match.group(1).upper(), "reason": reason},
+    )
+
+
 def _format_tool_result(value: Any, tool_name: str | None = None) -> str:
     if tool_name == "get_booking_status" and isinstance(value, dict):
         booking_id = value.get("id", value.get("booking_id", "the booking"))
@@ -464,6 +504,20 @@ def _format_tool_result(value: Any, tool_name: str | None = None) -> str:
             f"Cancellation fee: ₹{float(fee):,.2f}. "
             f"Refund: ₹{float(refund):,.2f}."
         )
+    if tool_name == "request_refund" and isinstance(value, dict):
+        request_id = value.get("request_id", "the refund request")
+        booking_id = value.get("booking_id", "the booking")
+        if value.get("already_pending"):
+            return (
+                f"Refund request {request_id} for booking {booking_id} is already pending. "
+                "No second request was created, and no refund has been issued or approved."
+            )
+        return (
+            f"Refund request {request_id} for booking {booking_id} was recorded as pending. "
+            "This records a request only; no refund has been issued or approved."
+        )
+    if tool_name == "update_contact" and isinstance(value, dict):
+        return "Your customer contact details were updated."
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False, default=str)
     return str(value)

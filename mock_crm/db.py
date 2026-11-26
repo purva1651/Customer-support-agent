@@ -28,7 +28,8 @@ def initialize_database(path: Path | None = None) -> None:
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 email TEXT,
-                phone TEXT
+                phone TEXT,
+                address TEXT
             );
             CREATE TABLE IF NOT EXISTS bookings (
                 id TEXT PRIMARY KEY,
@@ -47,8 +48,23 @@ def initialize_database(path: Path | None = None) -> None:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
             );
+            CREATE TABLE IF NOT EXISTS refund_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                booking_id TEXT NOT NULL REFERENCES bookings(id),
+                customer_id TEXT NOT NULL REFERENCES customers(id),
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_refund_requests_open_booking
+                ON refund_requests(booking_id, customer_id) WHERE status = 'pending';
             """
         )
+        customer_columns = {
+            str(row["name"]) for row in connection.execute("PRAGMA table_info(customers)")
+        }
+        if "address" not in customer_columns:
+            connection.execute("ALTER TABLE customers ADD COLUMN address TEXT")
         connection.executemany(
             """INSERT OR IGNORE INTO customers (id, name, email, phone)
                VALUES (:id, :name, :email, :phone)""",
@@ -109,13 +125,48 @@ def create_ticket(customer_id: str, subject: str, details: str) -> dict[str, Any
     return result
 
 
+def create_refund_request(
+    booking_id: str, customer_id: str, reason: str
+) -> dict[str, Any] | None:
+    """Queue a refund review request; this does not issue or promise a refund."""
+    with connect() as connection:
+        booking = connection.execute(
+            "SELECT 1 FROM bookings WHERE id = ? AND customer_id = ?",
+            (booking_id, customer_id),
+        ).fetchone()
+        if booking is None:
+            return None
+        existing = connection.execute(
+            """SELECT * FROM refund_requests
+               WHERE booking_id = ? AND customer_id = ? AND status = 'pending'""",
+            (booking_id, customer_id),
+        ).fetchone()
+        if existing is not None:
+            row = dict(existing)
+            row["already_pending"] = True
+        else:
+            cursor = connection.execute(
+                """INSERT INTO refund_requests (booking_id, customer_id, reason)
+                   VALUES (?, ?, ?)""",
+                (booking_id, customer_id, reason),
+            )
+            row = dict(
+                connection.execute(
+                    "SELECT * FROM refund_requests WHERE id = ?", (cursor.lastrowid,)
+                ).fetchone()
+            )
+            row["already_pending"] = False
+    row["request_id"] = f"R-{1000 + int(row.pop('id'))}"
+    return row
+
+
 def update_contact(customer_id: str, updates: dict[str, str | None]) -> dict[str, Any] | None:
-    allowed_fields = {"email", "phone"}
+    allowed_fields = {"email", "phone", "address"}
     if not updates or not set(updates).issubset(allowed_fields):
-        raise ValueError("contact updates may include email and/or phone")
+        raise ValueError("contact updates may include email, phone, and/or address")
     fields = {field: value for field, value in updates.items() if value is not None}
     if not fields:
-        raise ValueError("at least one contact value is required")
+        raise ValueError("at least one contact or address value is required")
     assignments = ", ".join(f"{field} = ?" for field in fields)
     with connect() as connection:
         cursor = connection.execute(
@@ -125,6 +176,7 @@ def update_contact(customer_id: str, updates: dict[str, str | None]) -> dict[str
         if cursor.rowcount == 0:
             return None
         row = connection.execute(
-            "SELECT id, name, email, phone FROM customers WHERE id = ?", (customer_id,)
+            "SELECT id, name, email, phone, address FROM customers WHERE id = ?",
+            (customer_id,),
         ).fetchone()
     return dict(row)

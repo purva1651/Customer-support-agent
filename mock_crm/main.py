@@ -9,6 +9,8 @@ from mock_crm.schemas import (
     CancellationResponse,
     ContactUpdate,
     CustomerContactResponse,
+    RefundRequestCreate,
+    RefundRequestResponse,
     TicketCreate,
     TicketResponse,
 )
@@ -54,6 +56,22 @@ def post_ticket(ticket: TicketCreate) -> dict[str, object]:
     if not db.customer_exists(ticket.customer_id):
         raise HTTPException(status_code=404, detail="Customer not found")
     return db.create_ticket(ticket.customer_id, ticket.subject, ticket.details)
+
+
+@app.post(
+    "/bookings/{booking_id}/refund-requests",
+    response_model=RefundRequestResponse,
+    status_code=201,
+)
+def post_refund_request(
+    booking_id: str,
+    request: RefundRequestCreate,
+    customer_id: str = Query(min_length=1),
+) -> dict[str, object]:
+    result = db.create_refund_request(booking_id, customer_id, request.reason)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return result
 
 
 @app.patch("/customers/{customer_id}/contact", response_model=CustomerContactResponse)

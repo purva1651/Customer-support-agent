@@ -207,7 +207,10 @@ The Streamable HTTP MCP endpoint is `http://localhost:8001/mcp`. It exposes exac
 - `get_order_status(booking_id)`
 
 Send `X-API-Key`, `X-Customer-ID`, and `X-Session-ID` headers with MCP requests. Customer and
-session identity are never tool arguments. The key is the `MCP_API_KEY` value in `.env`.
+session identity are never tool arguments. The key is the `MCP_API_KEY` value in `.env`. Through
+`answer_question`, customers can also submit a refund request for review or update their contact
+email, phone number, or address. A refund request only creates a pending CRM review item; it does
+not issue or approve a payment.
 
 ## Checks and evaluations
 
@@ -278,8 +281,8 @@ available to admins for review.
 - The CRM is seeded SQLite data. It does not connect to a ticket vendor, payment system, or live
   booking provider.
 - The mock CRM supports booking lookup, cancellation with its configured fee and refund amount,
-  support-ticket creation, and email/phone contact updates. It has no separate refund-request
-  action or address update; `update_contact` is a documented deviation from the checklist wording.
+  pending refund requests for human review, support-ticket creation, and email, phone, or address
+  updates. A refund request does not issue or approve a payment.
 - Answers are limited to retrieved policy content. If retrieval is weak or a policy is missing,
   the agent says it is unsure and escalates instead of inventing a refund rule.
 - The BGE embedding and reranker models run locally. First startup requires a model download;

@@ -14,6 +14,11 @@ tools:
     requires_approval: false
     timeout_seconds: 10
     retries: 2
+  request_refund:
+    enabled: true
+    requires_approval: false
+    timeout_seconds: 10
+    retries: 2
   cancel_booking:
     enabled: true
     requires_approval: true

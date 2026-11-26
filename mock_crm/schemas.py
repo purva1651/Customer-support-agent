@@ -42,11 +42,34 @@ class TicketResponse(BaseModel):
     created_at: str
 
 
+class RefundRequestCreate(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("reason must not be blank")
+        return normalized
+
+
+class RefundRequestResponse(BaseModel):
+    request_id: str
+    booking_id: str
+    customer_id: str
+    reason: str
+    status: str
+    created_at: str
+    already_pending: bool = False
+
+
 class ContactUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: str | None = None
     phone: str | None = None
+    address: str | None = Field(default=None, max_length=300)
 
     @field_validator("email")
     @classmethod
@@ -69,10 +92,20 @@ class ContactUpdate(BaseModel):
             return normalized
         return value
 
+    @field_validator("address")
+    @classmethod
+    def validate_address(cls, value: str | None) -> str | None:
+        if value is not None:
+            normalized = value.strip()
+            if not normalized:
+                raise ValueError("address must not be blank")
+            return normalized
+        return value
+
     @model_validator(mode="after")
     def require_contact_value(self) -> "ContactUpdate":
-        if self.email is None and self.phone is None:
-            raise ValueError("at least one of email or phone is required")
+        if self.email is None and self.phone is None and self.address is None:
+            raise ValueError("at least one of email, phone, or address is required")
         return self
 
 
@@ -81,3 +114,4 @@ class CustomerContactResponse(BaseModel):
     name: str
     email: str | None
     phone: str | None
+    address: str | None

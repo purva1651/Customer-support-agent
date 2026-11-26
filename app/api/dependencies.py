@@ -22,6 +22,7 @@ from app.retrieval.reranker import BGEReranker
 from app.retrieval.vector_store import create_vector_store
 from app.tools.bookings import booking_status_tool, cancel_booking_tool
 from app.tools.contacts import update_contact_tool
+from app.tools.refunds import request_refund_tool
 from app.tools.tickets import create_ticket_tool
 
 
@@ -77,6 +78,7 @@ async def create_services(config_directory: Path = Path("config")) -> AppService
             "cancel_booking": cancel_booking_tool(customer_id, crm_client),
             "create_ticket": create_ticket_tool(customer_id, crm_client),
             "update_contact": update_contact_tool(customer_id, crm_client),
+            "request_refund": request_refund_tool(customer_id, crm_client),
         }
 
     agent_services = AgentServices(
